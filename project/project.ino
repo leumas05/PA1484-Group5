@@ -96,23 +96,18 @@ static void connect_wifi()
 // Must have function: Setup is run once on startup
 void setup()
 {
+  // Start Serial over USB
   Serial.begin(115200);
+  // short delay to allow Serial Monitor to open
   delay(200);
 
-  if (!amoled.begin()) {
-    Serial.println("Failed to init LilyGO AMOLED.");
-    while (true) delay(1000);
-  }
-
-  beginLvglHelper(amoled);   // init LVGL for this board
-
-  create_ui();
-  connect_wifi();
+  // Print Hello World to serial
+  Serial.println("Hello, World from LilyGO!");
 }
 
 // Must have function: Loop runs continously on device after setup
 void loop()
 {
-  lv_timer_handler();
-  delay(5);
+  delay(2000);
+  Serial.println("Hello World!");
 }
