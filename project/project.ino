@@ -7,11 +7,7 @@
 #include <LilyGo_AMOLED.h>
 #include <LV_Helper.h>
 #include <lvgl.h>
-
-
-// Wi-Fi credentials (Delete these before commiting to GitHub)
-static const char* WIFI_SSID     = "SSID";
-static const char* WIFI_PASSWORD = "PWD";
+#include <credentials.h>
 
 LilyGo_Class amoled;
 
@@ -23,6 +19,7 @@ static lv_obj_t* t1_label;
 static lv_obj_t* t2_label;
 static lv_obj_t* t3_label;
 static bool t2_dark = false;  // start tile #2 in light mode
+static bool t3_change = false;  // start tile #3 in light mode
 
 // Function: Tile #2 Color change
 static void apply_tile_colors(lv_obj_t* tile, lv_obj_t* label, bool dark)
@@ -40,6 +37,22 @@ static void on_tile2_clicked(lv_event_t* e)
   LV_UNUSED(e);
   t2_dark = !t2_dark;
   apply_tile_colors(t2, t2_label, t2_dark);
+}
+
+//Funktion: TIle #3 Color change
+static void on_tile3_clicked(lv_event_t*e){
+  LV_UNUSED(e);
+  t3_change = !t3_change;
+  apply_tile_colors(t3, t3_label, t3_change);
+
+  if(t3_change == false){
+    lv_obj_set_style_bg_color(t3, lv_color_hex(0x0000FF), 0); // blue background
+    lv_obj_set_style_text_color(t3_label, lv_color_hex(0xFFC0CB), 0); // pink text
+  }
+  else if(t3_change == true){
+    lv_obj_set_style_bg_color(t3, lv_color_hex(0xFFC0CB), 0); // pink background
+    lv_obj_set_style_text_color(t3_label, lv_color_hex(0x0000FF), 0); // blue text
+  }
 }
 
 // Function: Creates UI
@@ -80,7 +93,7 @@ static void create_ui()
   // Tile #3
   {
     t3_label = lv_label_create(t3);
-    lv_label_set_text(t3_label, "sida 3");
+    lv_label_set_text(t3_label, "Hello World! 3");
     lv_obj_set_style_text_font(t3_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t3_label);
 
@@ -88,7 +101,11 @@ static void create_ui()
     lv_obj_set_style_bg_opa(t3, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(t3, lv_color_hex(0xFFC0CB), 0); // pink
     lv_obj_set_style_text_color(t3_label, lv_color_hex(0x0000FF), 0); // blue
+
+    lv_obj_add_flag(t3, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(t3, on_tile3_clicked, LV_EVENT_CLICKED, NULL);
   }
+  
 }
 
 // Function: Connects to WIFI
