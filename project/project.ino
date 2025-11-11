@@ -55,6 +55,21 @@ static void on_tile3_clicked(lv_event_t*e){
   }
 }
 
+// Timer callback: update WiFi status on tile #3 every second
+static void wifi_status_timer_cb(lv_timer_t* timer)
+{
+  LV_UNUSED(timer);
+  if (!t3_label) return;
+  // Show short connected/disconnected status per user request
+  if (WiFi.status() == WL_CONNECTED) {
+    lv_label_set_text(t3_label, "Connected");
+    lv_obj_set_style_text_color(t3_label, lv_color_hex(0x0000FF), 0);
+  } else {
+    lv_label_set_text(t3_label, "Disconnected");
+    lv_obj_set_style_text_color(t3_label, lv_color_hex(0x0000FF), 0);
+  }
+}
+
 // Function: Creates UI
 static void create_ui()
 {
@@ -105,6 +120,8 @@ static void create_ui()
     lv_obj_add_flag(t3, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(t3, on_tile3_clicked, LV_EVENT_CLICKED, NULL);
   }
+  // Create a timer to refresh WiFi status every 1s
+  lv_timer_create(wifi_status_timer_cb, 1000, NULL);
   
 }
 
@@ -148,6 +165,8 @@ void setup()
 
   // Start LVGL helper and create UI
   beginLvglHelper(amoled, /*debug=*/true);
+  // Try to connect WiFi first so initial status is available on the tile
+  connect_wifi();
   create_ui();
 }
 
