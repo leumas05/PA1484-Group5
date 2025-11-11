@@ -12,14 +12,16 @@
 LilyGo_Class amoled;
 
 static lv_obj_t* tileview;
-static lv_obj_t* t1;
+static lv_obj_t* t_boot;
 static lv_obj_t* t2;
 static lv_obj_t* t3;
-static lv_obj_t* t1_label;
+static lv_obj_t* t_boot_label;
 static lv_obj_t* t2_label;
 static lv_obj_t* t3_label;
 static bool t2_dark = false;  // start tile #2 in light mode
 static bool t3_change = false;  // start tile #3 in light mode
+static unsigned long boot_start_ms = 0;
+static bool boot_switched = false;
 
 // Function: Tile #2 Color change
 static void apply_tile_colors(lv_obj_t* tile, lv_obj_t* label, bool dark)
@@ -64,18 +66,18 @@ static void create_ui()
   lv_obj_set_scrollbar_mode(tileview, LV_SCROLLBAR_MODE_OFF);
 
   // Add two horizontal tiles
-  t1 = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_HOR);
-  t2 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_HOR);
+  t_boot = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_HOR);
+  t2 = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_HOR);
   // Tile #3
-  t3 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR);
+  t3 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_HOR);
 
   // Tile #1
   {
-    t1_label = lv_label_create(t1);
-    lv_label_set_text(t1_label, "Hello World!");
-    lv_obj_set_style_text_font(t1_label, &lv_font_montserrat_28, 0);
-    lv_obj_center(t1_label);
-    apply_tile_colors(t1, t1_label, /*dark=*/false);
+    t_boot_label = lv_label_create(t_boot);
+    lv_label_set_text(t_boot_label, "GROUP 5, VERSION 0.1");
+    lv_obj_set_style_text_font(t_boot_label, &lv_font_montserrat_28, 0);
+    lv_obj_center(t_boot_label);
+    apply_tile_colors(t_boot, t_boot_label, /*dark=*/false);
   }
 
   // Tile #2
@@ -88,6 +90,9 @@ static void create_ui()
     apply_tile_colors(t2, t2_label, /*dark=*/false);
     lv_obj_add_flag(t2, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(t2, on_tile2_clicked, LV_EVENT_CLICKED, NULL);
+
+    // Start hidden so t_boot shows first; we'll reveal t2 after 5s
+    lv_obj_add_flag(t2, LV_OBJ_FLAG_HIDDEN);
   }
 
   // Tile #3
@@ -149,6 +154,7 @@ void setup()
   // Start LVGL helper and create UI
   beginLvglHelper(amoled, /*debug=*/true);
   create_ui();
+  boot_start_ms = millis();
 }
 
 // Must have function: Loop runs continously on device after setup
@@ -157,4 +163,9 @@ void loop()
   /* Let LVGL do its work. Call the timer handler frequently. */
   lv_timer_handler();
   delay(5);
+  if (!boot_switched && boot_start_ms != 0 && (millis() - boot_start_ms) >= 5000) {
+    boot_switched = true;
+    lv_obj_add_flag(t_boot, LV_OBJ_FLAG_HIDDEN);    // hide boot tile
+    lv_obj_clear_flag(t2, LV_OBJ_FLAG_HIDDEN);     // show tile #2
+  }
 }
