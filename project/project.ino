@@ -9,6 +9,7 @@
 #include <lvgl.h>
 #include <credentials.h>
 #include "weather_api.h"
+#include "wifi_manager.h"
 
 LilyGo_Class amoled;
 
@@ -172,26 +173,6 @@ static void create_ui()
   
 }
 
-// Function: Connects to WIFI
-static void connect_wifi()
-{
-  Serial.printf("Connecting to WiFi SSID: %s\n", WIFI_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  const uint32_t start = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - start) < 15000) {
-    delay(250);
-  }
-  Serial.println();
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("WiFi connected.");
-  } else {
-    Serial.println("WiFi could not connect (timeout).");
-  }
-}
-
 // Must have function: Setup is run once on startup
 void setup()
 {
@@ -214,8 +195,7 @@ void setup()
   beginLvglHelper(amoled, /*debug=*/true);
   create_ui();
   // Start non-blocking WiFi connection so the boot screen shows immediately
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  initWiFi();
   // Start boot timer
   boot_start_ms = millis();
 }
