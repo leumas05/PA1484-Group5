@@ -8,6 +8,7 @@
 #include <LV_Helper.h>
 #include <lvgl.h>
 #include <credentials.h>
+#include "weather_api.h"
 
 LilyGo_Class amoled;
 
@@ -16,14 +17,17 @@ static lv_obj_t* t1;
 static lv_obj_t* t_boot;
 static lv_obj_t* t2;
 static lv_obj_t* t3;
+static lv_obj_t* t4;
 static lv_obj_t* t1_label;
 static lv_obj_t* t_boot_label;
 static lv_obj_t* t2_label;
 static lv_obj_t* t3_label;
+static lv_obj_t* t4_label;
 static bool t2_dark = false;  // start tile #2 in light mode
 static bool t3_change = false;  // start tile #3 in light mode
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
+static float lastTemperature = NAN;
 
 // Function: Tile #2 Color change
 static void apply_tile_colors(lv_obj_t* tile, lv_obj_t* label, bool dark)
@@ -43,21 +47,7 @@ static void on_tile2_clicked(lv_event_t* e)
   apply_tile_colors(t2, t2_label, t2_dark);
 }
 
-//Funktion: TIle #3 Color change
-static void on_tile3_clicked(lv_event_t*e){
-  LV_UNUSED(e);
-  t3_change = !t3_change;
-  apply_tile_colors(t3, t3_label, t3_change);
 
-  if(t3_change == false){
-    lv_obj_set_style_bg_color(t3, lv_color_hex(0x0000FF), 0); // blue background
-    lv_obj_set_style_text_color(t3_label, lv_color_hex(0xFFC0CB), 0); // pink text
-  }
-  else if(t3_change == true){
-    lv_obj_set_style_bg_color(t3, lv_color_hex(0xFFC0CB), 0); // pink background
-    lv_obj_set_style_text_color(t3_label, lv_color_hex(0x0000FF), 0); // blue text
-  }
-}
 
 // Timer callback: update WiFi status on tile #3 every second
 static void wifi_status_timer_cb(lv_timer_t* timer)
@@ -67,10 +57,37 @@ static void wifi_status_timer_cb(lv_timer_t* timer)
   // Show short connected/disconnected status per user request
   if (WiFi.status() == WL_CONNECTED) {
     lv_label_set_text(t3_label, "Connected");
-    lv_obj_set_style_text_color(t3_label, lv_color_hex(0x0000FF), 0);
   } else {
     lv_label_set_text(t3_label, "Disconnected");
-    lv_obj_set_style_text_color(t3_label, lv_color_hex(0x0000FF), 0);
+  }
+}
+
+// Timer callback: update temperature on tile #4 every 60 seconds
+static void temperature_timer_cb(lv_timer_t* timer)
+{
+  LV_UNUSED(timer);
+  if (!t4_label) return;
+  
+  // Check if WiFi is connected
+  if (WiFi.status() != WL_CONNECTED) {
+    lv_label_set_text(t4_label, "Waiting for WiFi...");
+    return;
+  }
+  
+  // WiFi is connected, fetch temperature
+  lv_label_set_text(t4_label, "Fetching temp...");
+  
+  String statusMsg;
+  lastTemperature = getCurrentTemperature(statusMsg);
+  
+  if (!isnan(lastTemperature)) {
+    char tempStr[64];
+    snprintf(tempStr, sizeof(tempStr), "Temp: %.1f°C", lastTemperature);
+    lv_label_set_text(t4_label, tempStr);
+  } else {
+    char errorStr[64];
+    snprintf(errorStr, sizeof(errorStr), "Error:\n(%s)", statusMsg.c_str());
+    lv_label_set_text(t4_label, errorStr);
   }
 }
 
@@ -88,6 +105,8 @@ static void create_ui()
   t2 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR);
   // Tile #3
   t3 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_HOR);
+  // Tile #4
+  t4 = lv_tileview_add_tile(tileview, 4, 0, LV_DIR_HOR);
 
   // Tile #1
   {
@@ -126,16 +145,30 @@ static void create_ui()
     lv_obj_set_style_text_font(t3_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t3_label);
 
-    // Pink background and blue text for tile #3
-    lv_obj_set_style_bg_opa(t3, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(t3, lv_color_hex(0xFFC0CB), 0); // pink
-    lv_obj_set_style_text_color(t3_label, lv_color_hex(0x0000FF), 0); // blue
-
-    lv_obj_add_flag(t3, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(t3, on_tile3_clicked, LV_EVENT_CLICKED, NULL);
+    // Black text on white background
+    apply_tile_colors(t3, t3_label, /*dark=*/false);
   }
+
+  // Tile #4 - Temperature Display
+  {
+    t4_label = lv_label_create(t4);
+    lv_label_set_text(t4_label, "Loading...");
+    lv_obj_set_style_text_font(t4_label, &lv_font_montserrat_28, 0);
+    lv_obj_center(t4_label);
+
+    // Light background with dark text for tile #4
+    apply_tile_colors(t4, t4_label, /*dark=*/false);
+  }
+
   // Create a timer to refresh WiFi status every 1s
   lv_timer_create(wifi_status_timer_cb, 1000, NULL);
+  // Create a timer to refresh temperature every 10s (10000ms)
+  lv_timer_create(temperature_timer_cb, 10000, NULL);
+  // Trigger first temperature fetch after 5 seconds to allow WiFi to connect
+  lv_timer_create([](lv_timer_t* t){ 
+    temperature_timer_cb(t); 
+    lv_timer_del(t); 
+  }, 5000, NULL);
   
 }
 
