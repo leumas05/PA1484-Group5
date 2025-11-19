@@ -8,4 +8,10 @@
 // statusMsg will contain a user-friendly status message
 float getCurrentTemperature(String& statusMsg);
 
+// Function to fetch current wind data from SMHI API
+// Returns wind speed in m/s or NAN if request fails
+// windDirection will contain wind direction in degrees (0-360)
+// statusMsg will contain a user-friendly status message
+float getCurrentWind(String& statusMsg, float& windDirection);
+
 #endif

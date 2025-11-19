@@ -10,9 +10,11 @@
 #include <credentials.h>
 #include "weather_api.h"
 #include "wifi_manager.h"
+#include "weather_forecast.h"
+// PlatformIO automatically compile weather_forecast.cpp
+
 
 LilyGo_Class amoled;
-
 static lv_obj_t* tileview;
 static lv_obj_t* t1;
 static lv_obj_t* t_boot;
@@ -23,9 +25,16 @@ static lv_obj_t* t1_wifi_indicator;  // WiFi status indicator for tile #1
 static lv_obj_t* t_boot_label;
 static lv_obj_t* t2_label;
 static lv_obj_t* t3_label;
+<<<<<<< HEAD
 static lv_obj_t* t2_dropdown; //
 static lv_obj_t* t2_param_label; //
 static uint16_t t2_selected_index = 0; //
+=======
+static lv_obj_t* t4;
+static lv_obj_t* row_day[7];
+static lv_obj_t* row_icon[7];
+static lv_obj_t* row_temp[7];
+>>>>>>> 432d3883ca71bf551664fa0c21b0ef0123eff562
 static bool t2_dark = false;  // start tile #2 in light mode
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
@@ -190,7 +199,51 @@ static void create_ui()
     temperature_timer_cb(t); 
     lv_timer_del(t); 
   }, 5000, NULL);
-  
+  // Tile #4 — Forecast
+  t4 = lv_tileview_add_tile(tileview, 4, 0, LV_DIR_HOR);
+
+  for (int i = 0; i < 7; i++) {
+      row_day[i] = lv_label_create(t4);
+      row_icon[i] = lv_label_create(t4);
+      row_temp[i] = lv_label_create(t4);
+
+      lv_obj_set_style_text_font(row_day[i], &lv_font_montserrat_40, 0);
+      lv_obj_set_style_text_font(row_icon[i], &lv_font_montserrat_40, 0);
+      lv_obj_set_style_text_font(row_temp[i], &lv_font_montserrat_40, 0);
+
+      int y = 20 + i * 40; //Y-koordinate changing for each iteration (i*40) so we move downward
+      lv_obj_align(row_day[i], LV_ALIGN_TOP_LEFT, 10, y);
+      lv_obj_align(row_icon[i], LV_ALIGN_TOP_LEFT, 160, y);
+      lv_obj_align(row_temp[i], LV_ALIGN_TOP_LEFT, 220, y);
+
+      lv_label_set_text(row_day[i], "...");
+      lv_label_set_text(row_icon[i], "-");
+      lv_label_set_text(row_temp[i], "--°C");
+  }
+}
+
+
+static void update_forecast_ui(ForecastDay days[7]) {
+    for (int i = 0; i < 7; i++) {
+        lv_label_set_text(row_day[i], days[i].date);
+
+        const char* icon = "?";
+        switch (days[i].symbol) {
+            case 1: icon = "☀"; break;
+            case 2: icon = "🌤"; break;
+            case 3: icon = "⛅"; break;
+            case 4: icon = "☁"; break;
+            case 5: icon = "🌫"; break;
+            case 6: icon = "🌧"; break;
+            case 7: icon = "🌦"; break;
+            case 8: icon = "⛈"; break;
+        }
+        lv_label_set_text(row_icon[i], icon);
+
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.1f°C", days[i].temperature);
+        lv_label_set_text(row_temp[i], buf);
+    }
 }
 
 // Must have function: Setup is run once on startup
@@ -218,6 +271,29 @@ void setup()
   initWiFi();
   // Start boot timer
   boot_start_ms = millis();
+  // 7-day forecast: update every hour
+  lv_timer_create([](lv_timer_t* timer) {
+      ForecastDay days[7];
+      String status;
+
+      if (getSevenDayForecast(0, days, status)) {
+          update_forecast_ui(days);
+      } else {
+          Serial.println("Forecast error: " + status);
+      }
+  }, 3600000, NULL);
+
+  // First update after 3 seconds (WiFi needs time)
+  lv_timer_create([](lv_timer_t* timer) {
+      ForecastDay days[7];
+      String status;
+
+      if (getSevenDayForecast(0, days, status)) {
+          update_forecast_ui(days);
+      }
+
+      lv_timer_del(timer);  // one-shot
+  }, 3000, NULL);
 }
 
 // Must have function: Loop runs continously on device after setup
