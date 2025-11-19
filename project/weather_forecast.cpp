@@ -1,108 +1,97 @@
-#include "weather_forecast.h"
+#include <Arduino.h>
+#include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include "weather_forecast.h"
 
-// ------------------ Cities List ------------------
-
+// Karlskrona coordinates
 const City cities[] = {
-    {"Karlskrona", 56.1612, 15.5869, "65090"},
-    {"Stockholm", 59.33, 18.06, ""},
-    {"Gothenburg", 57.70, 11.97, ""},
-    {"Malmo", 55.61, 13.00, ""}
+    {"Karlskrona", 56.1612, 15.5869, "KAR"}
 };
-const int CITY_COUNT = sizeof(cities) / sizeof(City);
-
-// --------------------------------------------------
-
-static float getParam(JsonObject step, const char* name) {
-    JsonArray params = step["parameters"];
-    for (JsonObject p : params) {
-        if (strcmp(p["name"], name) == 0) {
-            return p["values"][0].as<float>();
-        }
-    }
-    return NAN;
-}
-
-// Extract YYYY-MM-DD into out[]
-static void extractDate(const char* iso, char* outDate) {
-    strncpy(outDate, iso, 10);
-    outDate[10] = '\0';
-}
-
-// ------------------ Forecast Function ------------------
+const int CITY_COUNT = sizeof(cities) / sizeof(cities[0]);
 
 bool getSevenDayForecast(int cityIndex, ForecastDay out[7], String& statusMsg) {
     if (cityIndex < 0 || cityIndex >= CITY_COUNT) {
-        statusMsg = "Invalid city";
+        statusMsg = "Invalid city index";
         return false;
     }
 
-    const City& C = cities[cityIndex];
+    if (WiFi.status() != WL_CONNECTED) {
+        statusMsg = "WiFi not connected";
+        return false;
+    }
 
-    // Build URL
-    char url[300];
-    snprintf(url, sizeof(url),
-        "https://opendata-download-metfcst.smhi.se/api/category/pmp3g/version/2/"
-        "geotype/point/lon/%.4f/lat/%.4f/data.json",
-        C.lon, C.lat);
+    const City& city = cities[cityIndex];
+    String url = String("https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=")
+                 + city.lat + "&lon=" + city.lon;
 
     HTTPClient http;
     http.begin(url);
+    http.addHeader("User-Agent", "KarlskronaWeatherApp/1.0"); // Mandatory for met.no
 
-    int code = http.GET();
-    if (code != 200) {
-        statusMsg = "HTTP error";
+    int httpCode = http.GET();
+    if (httpCode != HTTP_CODE_OK) {
+        statusMsg = "HTTP error " + String(httpCode);
         http.end();
         return false;
     }
 
-    JsonDocument doc;  // ~100 kB needed
-    DeserializationError err = deserializeJson(doc, http.getString());
+    String payload = http.getString();
     http.end();
 
-    if (err) {
-        statusMsg = "JSON parse error";
+    // Debug: uncomment to see raw JSON
+    // Serial.println("Raw JSON:");
+    // Serial.println(payload);
+
+    // Allocate sufficient buffer for 7-day forecast
+    DynamicJsonDocument doc(12 * 1024);
+    DeserializationError error = deserializeJson(doc, payload);
+    if (error) {
+        statusMsg = error.c_str();
         return false;
     }
 
-    JsonArray series = doc["timeSeries"];
-    if (!series) {
-        statusMsg = "Missing timeSeries";
+    // Get timeseries array
+    JsonArray timeseries = doc["properties"]["timeseries"].as<JsonArray>();
+    if (timeseries.isNull()) {
+        statusMsg = "No timeseries data";
         return false;
-    }
-
-    // Initialize output
-    for (int i = 0; i < 7; i++) {
-        out[i].temperature = NAN;
-        out[i].symbol = -1;
-        strcpy(out[i].date, "");
     }
 
     int filledDays = 0;
+    String lastDate = "";
 
-    // Look for each day's 12:00 reading
-    for (JsonObject step : series) {
-        const char* time = step["validTime"];   // ISO timestamp
+    for (JsonObject entry : timeseries) {
+        const char* timeStr = entry["time"]; // e.g., "2025-11-19T12:00:00Z"
+        String dateStr = String(timeStr).substring(0, 10); // "YYYY-MM-DD"
 
-        // Look only for 12:00 UTC
-        if (strstr(time, "T12:00:00Z") == nullptr) continue;
+        // Pick only one entry per day at 12:00
+        if (dateStr != lastDate && String(timeStr).endsWith("T12:00:00Z")) {
+            lastDate = dateStr;
 
-        if (filledDays >= 7) break;
+            out[filledDays].temperature = entry["data"]["instant"]["details"]["air_temperature"] | NAN;
 
-        extractDate(time, out[filledDays].date);
+            // Pick Wsymb2 symbol (if available)
+            JsonArray nextHours = entry["data"]["next_12_hours"]["summary"];
+            if (!nextHours.isNull()) {
+                // For simplicity, take first symbol
+                out[filledDays].symbol = entry["data"]["next_12_hours"]["summary"]["symbol_code"].as<String>() == "clearsky" ? 1 : 4;
+            } else {
+                out[filledDays].symbol = 4; // Default cloud
+            }
 
-        out[filledDays].temperature = getParam(step, "t");
-        out[filledDays].symbol = (int)getParam(step, "Wsymb2");
+            strncpy(out[filledDays].date, dateStr.c_str(), sizeof(out[filledDays].date));
+            out[filledDays].date[sizeof(out[filledDays].date)-1] = '\0';
 
-        filledDays++;
+            filledDays++;
+            if (filledDays >= 7) break;
+        }
     }
 
     if (filledDays < 7) {
-        statusMsg = "Not enough data";
+        statusMsg = "Not enough forecast data";
         return false;
     }
 
-    statusMsg = "OK";
     return true;
 }

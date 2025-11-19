@@ -167,28 +167,36 @@ static void create_ui()
     lv_timer_del(t); 
   }, 5000, NULL);
   // Tile #4 — Forecast
-  t4 = lv_tileview_add_tile(tileview, 4, 0, LV_DIR_HOR);
-
-  for (int i = 0; i < 7; i++) {
-      row_day[i] = lv_label_create(t4);
-      row_icon[i] = lv_label_create(t4);
-      row_temp[i] = lv_label_create(t4);
-
-      lv_obj_set_style_text_font(row_day[i], &lv_font_montserrat_40, 0);
-      lv_obj_set_style_text_font(row_icon[i], &lv_font_montserrat_40, 0);
-      lv_obj_set_style_text_font(row_temp[i], &lv_font_montserrat_40, 0);
-
-      int y = 20 + i * 40; //Y-koordinate changing for each iteration (i*40) so we move downward
-      lv_obj_align(row_day[i], LV_ALIGN_TOP_LEFT, 10, y);
-      lv_obj_align(row_icon[i], LV_ALIGN_TOP_LEFT, 160, y);
-      lv_obj_align(row_temp[i], LV_ALIGN_TOP_LEFT, 220, y);
-
-      lv_label_set_text(row_day[i], "...");
-      lv_label_set_text(row_icon[i], "-");
-      lv_label_set_text(row_temp[i], "--°C");
+  create_forecast_ui();
   }
-}
 
+static void create_forecast_ui() {
+    // Add Tile #4
+    t4 = lv_tileview_add_tile(tileview, 4, 0, LV_DIR_HOR);
+
+    // Create 7 rows for day, icon, and temperature
+    for (int i = 0; i < 7; i++) {
+        row_day[i] = lv_label_create(t4);
+        row_icon[i] = lv_label_create(t4);
+        row_temp[i] = lv_label_create(t4);
+
+        // Set font
+        lv_obj_set_style_text_font(row_day[i], &lv_font_montserrat_40, 0);
+        lv_obj_set_style_text_font(row_icon[i], &lv_font_montserrat_40, 0);
+        lv_obj_set_style_text_font(row_temp[i], &lv_font_montserrat_40, 0);
+
+        // Position labels in columns, Y shifts by 40 each row
+        int y = 20 + i * 40;
+        lv_obj_align(row_day[i], LV_ALIGN_TOP_LEFT, 10, y);
+        lv_obj_align(row_icon[i], LV_ALIGN_TOP_LEFT, 220, y);
+        lv_obj_align(row_temp[i], LV_ALIGN_TOP_LEFT, 430, y);
+
+        // Initialize with placeholder text
+        lv_label_set_text(row_day[i], "...");
+        lv_label_set_text(row_icon[i], "-");
+        lv_label_set_text(row_temp[i], "--°C");
+    }
+  }
 
 static void update_forecast_ui(ForecastDay days[7]) {
     for (int i = 0; i < 7; i++) {
@@ -252,15 +260,18 @@ void setup()
 
   // First update after 3 seconds (WiFi needs time)
   lv_timer_create([](lv_timer_t* timer) {
-      ForecastDay days[7];
-      String status;
-
-      if (getSevenDayForecast(0, days, status)) {
-          update_forecast_ui(days);
-      }
-
-      lv_timer_del(timer);  // one-shot
-  }, 3000, NULL);
+    if (WiFi.status() != WL_CONNECTED) return;  // wait for WiFi
+    ForecastDay days[7];
+    String status;
+    Serial.println("Fetching forecast...");
+    if (!getSevenDayForecast(0, days, status)) {
+        Serial.println("Forecast failed: " + status);
+    } else {
+        Serial.println("Forecast success");
+        update_forecast_ui(days);
+        lv_timer_del(timer);  // stop one-shot
+    }
+}, 5000, NULL);  // give WiFi a few seconds to connect
 }
 
 // Must have function: Loop runs continously on device after setup

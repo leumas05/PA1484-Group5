@@ -11,7 +11,7 @@ struct City {
     const char* name;
     float lat;
     float lon;
-    String station;
+    const char* station; // NEW
 };
 
 // Example city list (you can extend this later)
