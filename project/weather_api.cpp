@@ -1,6 +1,7 @@
 #include "weather_api.h"
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <weather_forecast.h>
 
 // Function to fetch current temperature from SMHI API
 // Returns temperature in Celsius or NAN if request fails

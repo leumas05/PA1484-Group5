@@ -5,10 +5,10 @@
 // ------------------ Cities List ------------------
 
 const City cities[] = {
-    {"Karlskrona", 56.1612, 15.5869, 65090},
-    {"Stockholm", 59.33, 18.06},
-    {"Gothenburg", 57.70, 11.97},
-    {"Malmo", 55.61, 13.00}
+    {"Karlskrona", 56.1612, 15.5869, "65090"},
+    {"Stockholm", 59.33, 18.06, ""},
+    {"Gothenburg", 57.70, 11.97, ""},
+    {"Malmo", 55.61, 13.00, ""}
 };
 const int CITY_COUNT = sizeof(cities) / sizeof(City);
 
