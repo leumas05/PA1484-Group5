@@ -113,7 +113,7 @@ static void create_ui()
     // Boot tile (shows first for a short time)
   {
     t_boot_label = lv_label_create(t_boot);
-    lv_label_set_text(t_boot_label, "Grupp 5 v.0.2");
+    lv_label_set_text(t_boot_label, "Grupp 5 v.0.3");
     lv_obj_set_style_text_font(t_boot_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t_boot_label);
     apply_tile_colors(t_boot, t_boot_label, /*dark=*/false);
@@ -122,7 +122,7 @@ static void create_ui()
   // Tile #1
   {
     t1_label = lv_label_create(t1);
-    lv_label_set_text(t1_label, "Hello World!");
+    lv_label_set_text(t1_label, "Welcome to WeAPP!");
     lv_obj_set_style_text_font(t1_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t1_label);
     apply_tile_colors(t1, t1_label, /*dark=*/false);
@@ -137,7 +137,7 @@ static void create_ui()
   // Tile #2
   {
     t2_label = lv_label_create(t2);
-    lv_label_set_text(t2_label, "Hello World! 2");
+    lv_label_set_text(t2_label, "Å Ä Ö ô");
     lv_obj_set_style_text_font(t2_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t2_label);
 
@@ -188,8 +188,8 @@ static void create_forecast_ui() {
         // Position labels in columns, Y shifts by 40 each row
         int y = 20 + i * 40;
         lv_obj_align(row_day[i], LV_ALIGN_TOP_LEFT, 10, y);
-        lv_obj_align(row_icon[i], LV_ALIGN_TOP_LEFT, 220, y);
-        lv_obj_align(row_temp[i], LV_ALIGN_TOP_LEFT, 430, y);
+        lv_obj_align(row_icon[i], LV_ALIGN_TOP_LEFT, 240, y);
+        lv_obj_align(row_temp[i], LV_ALIGN_TOP_LEFT, 450, y);
 
         // Initialize with placeholder text
         lv_label_set_text(row_day[i], "...");
