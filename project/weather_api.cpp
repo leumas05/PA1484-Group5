@@ -2,6 +2,40 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <weather_forecast.h>
+#include <cstring>   
+
+int station_nr;
+int paraM;
+
+int change_station_nr(const char* new_station) {
+  if (new_station == nullptr) {
+    return -1;
+  }
+
+  if (strcmp(new_station, "Karlskrona") == 0) {
+    station_nr = 65090;
+    return station_nr;
+  } else if (strcmp(new_station, "Stockholm") == 0) {
+    station_nr = 98230;
+    return station_nr;
+  } else if (strcmp(new_station, "Gothenburg") == 0) {
+    station_nr = 71420;
+    return station_nr;
+  } else if (strcmp(new_station, "Haparanda") == 0) {
+    station_nr = 163960;
+    return station_nr;
+  }
+
+  return -1; // Invalid station name
+}
+
+//"https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/4/station/65090/period/latest-hour/data.json"
+// Build URL using Arduino `String` concatenation to avoid pointer arithmetic
+// Helper: build API URL for current parameter and station
+//static String build_smhi_url(int parameter, int station) {
+//  return String("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/") + String(parameter) + String("/station/") + String(station) + String("/period/latest-hour/data.json");
+//}
+
 
 // Function to fetch current temperature from SMHI API
 // Returns temperature in Celsius or NAN if request fails
@@ -11,7 +45,9 @@ float getCurrentTemperature(String& statusMsg) {
   float temperature = NAN; // Return NAN if request fails
   
   // Begin HTTP connection to SMHI API
-  http.begin("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/1/station/65090/period/latest-hour/data.json");
+  paraM = 1;
+  String url=("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/") + String(paraM) + String("/station/") + String(station_nr) + String("/period/latest-hour/data.json");
+  http.begin(url);
   
   int httpCode = http.GET();
   
@@ -55,8 +91,9 @@ float getCurrentTemperature(String& statusMsg) {
 float getCurrentWindDirection(String& statusMsg) {
   HTTPClient http;
   float windDirection = NAN; // Return NAN if request fails
-
-  http.begin("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/3/station/65090/period/latest-hour/data.json");
+  paraM = 3;
+  String url=("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/") + String(paraM) + String("/station/") + String(station_nr) + String("/period/latest-hour/data.json");
+  http.begin(url);
   int httpCode = http.GET();
 
   if (httpCode == HTTP_CODE_OK) {
@@ -93,7 +130,9 @@ float getCurrentWindSpeed(String& statusMsg) {
   float windSpeed = NAN; // Return NAN if request fails
 
   // First, fetch wind speed (parameter 4)
-  http.begin("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/4/station/65090/period/latest-hour/data.json");
+  paraM = 4;
+  String url=("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/") + String(paraM) + String("/station/") + String(station_nr) + String("/period/latest-hour/data.json");
+  http.begin(url);
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
     String payload = http.getString();
@@ -132,8 +171,10 @@ float getCurrentRain(String& statusMsg) {
   HTTPClient http;
   float rain = NAN; // Return NAN if request fails
 
-  // First, fetch wind speed (parameter 4)
-  http.begin("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/7/station/65090/period/latest-hour/data.json");
+  // First, fetch wind speed (parameter 7)
+  paraM = 7;
+  String url=("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/") + String(paraM) + String("/station/") + String(station_nr) + String("/period/latest-hour/data.json");
+  http.begin(url);
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
     String payload = http.getString();
@@ -172,8 +213,10 @@ float getCurrentHumidity(String& statusMsg) {
   HTTPClient http;
   float humidity = NAN; // Return NAN if request fails
 
-  // First, fetch wind speed (parameter 4)
-  http.begin("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/6/station/65090/period/latest-hour/data.json");
+  // First, fetch wind speed (parameter 6)
+  paraM = 6;
+  String url=("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/") + String(paraM) + String("/station/") + String(station_nr) + String("/period/latest-hour/data.json");
+  http.begin(url);
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
     String payload = http.getString();
@@ -212,8 +255,10 @@ float getCurrentPressure(String& statusMsg) {
   HTTPClient http;
   float pressure = NAN; // Return NAN if request fails
 
-  // First, fetch wind speed (parameter 4)
-  http.begin("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/9/station/65090/period/latest-hour/data.json");
+  // First, fetch wind speed (parameter 9)
+  paraM = 9;
+  String url=("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/") + String(paraM) + String("/station/") + String(station_nr) + String("/period/latest-hour/data.json");
+  http.begin(url);
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
     String payload = http.getString();

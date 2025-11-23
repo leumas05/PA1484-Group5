@@ -28,11 +28,14 @@ static lv_obj_t* t3_label;
 static lv_obj_t* t2_dropdown; //
 static lv_obj_t* t2_param_label; //
 static uint16_t t2_selected_index = 0; //
+static lv_obj_t* t2_dropdown_cities; //
+static lv_obj_t* t2_city_label; //
+static uint16_t t2_selected_city_index = 0; //
 static lv_obj_t* t4;
 static lv_obj_t* row_day[7];
 static lv_obj_t* row_icon[7];
 static lv_obj_t* row_temp[7];
-static bool t2_dark = false;  // start tile #2 in light mode
+// tile #2 no longer supports color change; dark-mode toggle removed
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
@@ -48,12 +51,7 @@ static void apply_tile_colors(lv_obj_t* tile, lv_obj_t* label, bool dark)
   lv_obj_set_style_text_color(label, dark ? lv_color_white() : lv_color_black(), 0);
 }
 
-static void on_tile2_clicked(lv_event_t* e)
-{
-  LV_UNUSED(e);
-  t2_dark = !t2_dark;
-  apply_tile_colors(t2, t2_label, t2_dark);
-}
+// Color-change handler removed for tile #2
 
 // Timer callback: update WiFi status indicator on tile #1 every second
 static void wifi_indicator_timer_cb(lv_timer_t* timer)
@@ -137,16 +135,14 @@ static void create_ui()
     lv_obj_align(t1_wifi_indicator, LV_ALIGN_TOP_RIGHT, -10, 10);
   }
 
-  // Tile #2
+  // Tile #2 SETTINGS TILE
   {
     t2_label = lv_label_create(t2);
-    lv_label_set_text(t2_label, "Hello World! 2");
+    lv_label_set_text(t2_label, "");
     lv_obj_set_style_text_font(t2_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t2_label);
 
     apply_tile_colors(t2, t2_label, /*dark=*/false);
-    lv_obj_add_flag(t2, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(t2, on_tile2_clicked, LV_EVENT_CLICKED, NULL);
     // Dropdown to choose which weather parameter to show
     t2_dropdown = lv_dropdown_create(t2);
     const char* dd_opts = "Temperature\nWind\nRain\nHumidity\nPressure";
@@ -168,6 +164,38 @@ static void create_ui()
       // Direct call to update (safe here)
       extern void update_t2_param_display(); // declare defined later
       update_t2_param_display();
+    }, LV_EVENT_VALUE_CHANGED, NULL);
+
+    t2_dropdown_cities = lv_dropdown_create(t2);
+    const char* dd_opts_city = "Karlskrona\nStockholm\nGothenburg\nHaparanda";
+    lv_dropdown_set_options_static(t2_dropdown_cities, dd_opts_city);
+    lv_obj_set_width(t2_dropdown_cities, 200);
+    lv_obj_align(t2_dropdown_cities, LV_ALIGN_TOP_LEFT, 0, 20);
+
+    t2_city_label = lv_label_create(t2);
+    lv_label_set_text(t2_city_label, "Select city...");
+    lv_obj_set_style_text_font(t2_city_label, &lv_font_montserrat_20, 0);
+    lv_obj_align_to(t2_city_label, t2_dropdown_cities, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
+
+    lv_obj_add_event_cb(t2_dropdown_cities, [](lv_event_t* e){
+      lv_obj_t* dd = lv_event_get_target(e);
+      t2_selected_city_index = lv_dropdown_get_selected(dd);
+      // call update function (defined below)
+      // small wrapper to keep style consistent with lv_timer callbacks
+      auto call = [](lv_timer_t* t){ (void)t; /* no-op placeholder */ };
+      // Direct call to update (safe here)
+      extern void update_t2_city_display(); // declare defined later
+      update_t2_city_display();
+      // Also fetch an updated forecast for the newly selected city (if WiFi is ready)
+      if (WiFi.status() == WL_CONNECTED) {
+        ForecastDay days[7];
+        String status;
+        if (getSevenDayForecast(t2_selected_city_index, days, status)) {
+          update_forecast_ui(days);
+        } else {
+          Serial.println("Forecast failed: " + status);
+        }
+      }
     }, LV_EVENT_VALUE_CHANGED, NULL);
   }
 
@@ -396,4 +424,36 @@ void update_t2_param_display()
     }
   }
   lv_label_set_text(t2_param_label, buf);
+}
+
+void update_t2_city_display()
+{
+  if (!t2_city_label) return;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    lv_label_set_text(t2_city_label, "");
+    return;
+  }
+
+  String err;
+  char buf[128];
+  int new_station = -1;
+  const char* cityName = "Unknown";
+
+  switch (t2_selected_city_index) {
+    case 0: cityName = "Karlskrona"; break;
+    case 1: cityName = "Stockholm"; break;
+    case 2: cityName = "Gothenburg"; break;
+    case 3: cityName = "Haparanda"; break;
+  }
+
+  new_station = change_station_nr(cityName);
+
+  /*if (new_station > 0) {
+    snprintf(buf, sizeof(buf), "City: %s (Station %d)", cityName, new_station);
+  } else {
+    snprintf(buf, sizeof(buf), "City: %s", cityName);
+  }*/
+
+  lv_label_set_text(t2_city_label, buf);
 }

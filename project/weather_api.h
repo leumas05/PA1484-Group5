@@ -30,4 +30,7 @@ float getCurrentHumidity(String& statusMsg);
 
 float getCurrentPressure(String& statusMsg);
 
+// Change the current station by name. Returns station number or -1 on error.
+int change_station_nr(const char* new_station);
+
 #endif
