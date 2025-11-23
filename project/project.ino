@@ -11,9 +11,9 @@
 #include "weather_api.h"
 #include "wifi_manager.h"
 #include "weather_forecast.h"
+
+
 // PlatformIO automatically compile weather_forecast.cpp
-
-
 LilyGo_Class amoled;
 static lv_obj_t* tileview;
 static lv_obj_t* t1;
@@ -25,6 +25,9 @@ static lv_obj_t* t1_wifi_indicator;  // WiFi status indicator for tile #1
 static lv_obj_t* t_boot_label;
 static lv_obj_t* t2_label;
 static lv_obj_t* t3_label;
+static lv_obj_t* t2_dropdown; //
+static lv_obj_t* t2_param_label; //
+static uint16_t t2_selected_index = 0; //
 static lv_obj_t* t4;
 static lv_obj_t* row_day[7];
 static lv_obj_t* row_icon[7];
@@ -137,13 +140,35 @@ static void create_ui()
   // Tile #2
   {
     t2_label = lv_label_create(t2);
-    lv_label_set_text(t2_label, "Å Ä Ö ô");
+    lv_label_set_text(t2_label, "Hello World! 2");
     lv_obj_set_style_text_font(t2_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t2_label);
 
     apply_tile_colors(t2, t2_label, /*dark=*/false);
     lv_obj_add_flag(t2, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(t2, on_tile2_clicked, LV_EVENT_CLICKED, NULL);
+    // Dropdown to choose which weather parameter to show
+    t2_dropdown = lv_dropdown_create(t2);
+    const char* dd_opts = "Temperature\nWind\nRain\nHumidity\nPressure";
+    lv_dropdown_set_options_static(t2_dropdown, dd_opts);
+    lv_obj_set_width(t2_dropdown, 200);
+    lv_obj_align(t2_dropdown, LV_ALIGN_TOP_MID, 0, 20);
+    // Label that shows the chosen parameter's current value
+    t2_param_label = lv_label_create(t2);
+    lv_label_set_text(t2_param_label, "Select parameter...");
+    lv_obj_set_style_text_font(t2_param_label, &lv_font_montserrat_20, 0);
+    lv_obj_align_to(t2_param_label, t2_dropdown, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
+    // Dropdown event: update immediately when user selects a different option
+    lv_obj_add_event_cb(t2_dropdown, [](lv_event_t* e){
+      lv_obj_t* dd = lv_event_get_target(e);
+      t2_selected_index = lv_dropdown_get_selected(dd);
+      // call update function (defined below)
+      // small wrapper to keep style consistent with lv_timer callbacks
+      auto call = [](lv_timer_t* t){ (void)t; /* no-op placeholder */ };
+      // Direct call to update (safe here)
+      extern void update_t2_param_display(); // declare defined later
+      update_t2_param_display();
+    }, LV_EVENT_VALUE_CHANGED, NULL);
   }
 
   // Tile #3 - Temperature Display (formerly tile #4)
@@ -157,16 +182,24 @@ static void create_ui()
     apply_tile_colors(t3, t3_label, /*dark=*/false);
   }
 
-  // Create a timer to refresh WiFi indicator on tile #1 every 1s
+   // Create a timer to refresh WiFi indicator on tile #1 every 1s
   lv_timer_create(wifi_indicator_timer_cb, 1000, NULL);
   // Create a timer to refresh temperature every 5s (5000ms)
   lv_timer_create(temperature_timer_cb, 5000, NULL);
+  // Create a timer to refresh the selected parameter on tile #2 every 10s
+  lv_timer_create([](lv_timer_t* t){
+    (void)t;
+    update_t2_param_display();
+  }, 10000, NULL);
   // Trigger first temperature fetch after 5 seconds to allow WiFi to connect
   lv_timer_create([](lv_timer_t* t){ 
     temperature_timer_cb(t); 
     lv_timer_del(t); 
   }, 5000, NULL);
+
+  
   // Tile #4 — Forecast
+  // Create the forecast UI (adds the tile and the rows)
   create_forecast_ui();
   }
 
@@ -289,4 +322,78 @@ void loop()
     // Hide boot tile
     lv_obj_add_flag(t_boot, LV_OBJ_FLAG_HIDDEN);
   }
+}
+
+// Update the displayed parameter on tile #2 according to t2_selected_index
+void update_t2_param_display()
+{
+  if (!t2_param_label) return;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    lv_label_set_text(t2_param_label, "WiFi not connected");
+    return;
+  }
+
+  String err;
+  char buf[128];
+
+  switch (t2_selected_index) {
+    case 0: { // Temperature
+      float v = getCurrentTemperature(err);
+      if (!isnan(v)) {
+        snprintf(buf, sizeof(buf), "Temp: %.1f °C", v);
+      } else {
+        snprintf(buf, sizeof(buf), "Temp err: %s", err.c_str());
+      }
+      break;
+    }
+    case 1: { // Wind (show speed and direction together)
+      String errSpeed, errDir;
+      float speed = getCurrentWindSpeed(errSpeed);
+      float dir = getCurrentWindDirection(errDir);
+      bool haveSpeed = !isnan(speed);
+      bool haveDir = (dir >= 0);
+
+      if (haveSpeed && haveDir) {
+        snprintf(buf, sizeof(buf), "Wind: %.1f m/s, Dir: %d°", speed, dir);
+      } else if (haveSpeed) {
+        snprintf(buf, sizeof(buf), "Wind: %.1f m/s", speed);
+      } else if (haveDir) {
+        snprintf(buf, sizeof(buf), "Wind dir: %d°", dir);
+      } else {
+        if (errSpeed.length()) snprintf(buf, sizeof(buf), "Wind err: %s", errSpeed.c_str());
+        else if (errDir.length()) snprintf(buf, sizeof(buf), "Wind err: %s", errDir.c_str());
+        else snprintf(buf, sizeof(buf), "Wind: unavailable");
+      }
+      break;
+    }
+    case 2: { // Rain
+      float v = getCurrentRain(err);
+      if (!isnan(v)) {
+        snprintf(buf, sizeof(buf), "Rain: %.1f mm", v);
+      } else {
+        snprintf(buf, sizeof(buf), "Rain err: %s", err.c_str());
+      }
+      break;
+    }
+    case 3: { // Humidity
+      float v = getCurrentHumidity(err);
+      if (!isnan(v)) {
+        snprintf(buf, sizeof(buf), "Humidity: %.1f %%", v);
+      } else {
+        snprintf(buf, sizeof(buf), "Humidity err: %s", err.c_str());
+      }
+      break;
+    }
+    case 4: { // Pressure
+      float v = getCurrentPressure(err);
+      if (!isnan(v)) {
+        snprintf(buf, sizeof(buf), "Pressure: %.1f hPa", v);
+      } else {
+        snprintf(buf, sizeof(buf), "Pressure err: %s", err.c_str());
+      }
+      break;
+    }
+  }
+  lv_label_set_text(t2_param_label, buf);
 }
