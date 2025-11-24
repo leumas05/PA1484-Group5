@@ -178,6 +178,29 @@ static void create_ui()
         }
       }
     }, LV_EVENT_VALUE_CHANGED, NULL);
+
+    // Reset button: restores default parameter and city selection (INTE TESTAD ÄN)
+    {
+      lv_obj_t* reset_btn = lv_btn_create(t2);
+      lv_obj_set_size(reset_btn, 120, 40);
+      lv_obj_align(reset_btn, LV_ALIGN_TOP_RIGHT, -10, 18);
+      lv_obj_t* lbl = lv_label_create(reset_btn);
+      lv_label_set_text(lbl, "Reset");
+      lv_obj_center(lbl);
+      lv_obj_add_event_cb(reset_btn, [](lv_event_t* e){
+        LV_UNUSED(e);
+        // Reset dropdown selections to defaults
+        if (t2_dropdown) lv_dropdown_set_selected(t2_dropdown, 0);
+        t2_selected_index = 0;
+        if (t2_dropdown_cities) lv_dropdown_set_selected(t2_dropdown_cities, 0);
+        t2_selected_city_index = 0;
+
+        // Update displays
+        update_t2_param_display();
+        update_t2_city_display();
+        
+      }, LV_EVENT_CLICKED, NULL);
+    }
   }
 
   // Tile #3 - Temperature Display (formerly tile #4)
