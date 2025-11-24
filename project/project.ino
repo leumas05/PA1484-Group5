@@ -35,23 +35,9 @@ static lv_obj_t* t4;
 static lv_obj_t* row_day[7];
 static lv_obj_t* row_icon[7];
 static lv_obj_t* row_temp[7];
-// tile #2 no longer supports color change; dark-mode toggle removed
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
-
-// Function: Tile #2 Color change
-static void apply_tile_colors(lv_obj_t* tile, lv_obj_t* label, bool dark)
-{
-  // Background
-  lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
-  lv_obj_set_style_bg_color(tile, dark ? lv_color_black() : lv_color_white(), 0);
-
-  // Text
-  lv_obj_set_style_text_color(label, dark ? lv_color_white() : lv_color_black(), 0);
-}
-
-// Color-change handler removed for tile #2
 
 // Timer callback: update WiFi status indicator on tile #1 every second
 static void wifi_indicator_timer_cb(lv_timer_t* timer)
@@ -117,7 +103,6 @@ static void create_ui()
     lv_label_set_text(t_boot_label, "Grupp 5 v.0.3");
     lv_obj_set_style_text_font(t_boot_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t_boot_label);
-    apply_tile_colors(t_boot, t_boot_label, /*dark=*/false);
   }
 
   // Tile #1
@@ -126,7 +111,6 @@ static void create_ui()
     lv_label_set_text(t1_label, "Welcome to WeAPP!");
     lv_obj_set_style_text_font(t1_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t1_label);
-    apply_tile_colors(t1, t1_label, /*dark=*/false);
     
     // Add WiFi indicator in top-right corner
     t1_wifi_indicator = lv_label_create(t1);
@@ -142,11 +126,11 @@ static void create_ui()
     lv_obj_set_style_text_font(t2_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t2_label);
 
-    apply_tile_colors(t2, t2_label, /*dark=*/false);
     // Dropdown to choose which weather parameter to show
     t2_dropdown = lv_dropdown_create(t2);
     const char* dd_opts = "Temperature\nWind\nRain\nHumidity\nPressure";
     lv_dropdown_set_options_static(t2_dropdown, dd_opts);
+    lv_dropdown_set_selected(t2_dropdown, 0);  // Default to Temperature
     lv_obj_set_width(t2_dropdown, 200);
     lv_obj_align(t2_dropdown, LV_ALIGN_TOP_MID, 0, 20);
     // Label that shows the chosen parameter's current value
@@ -158,17 +142,15 @@ static void create_ui()
     lv_obj_add_event_cb(t2_dropdown, [](lv_event_t* e){
       lv_obj_t* dd = lv_event_get_target(e);
       t2_selected_index = lv_dropdown_get_selected(dd);
-      // call update function (defined below)
-      // small wrapper to keep style consistent with lv_timer callbacks
-      auto call = [](lv_timer_t* t){ (void)t; /* no-op placeholder */ };
-      // Direct call to update (safe here)
-      extern void update_t2_param_display(); // declare defined later
+      // Direct call to update immediately
+      extern void update_t2_param_display();
       update_t2_param_display();
     }, LV_EVENT_VALUE_CHANGED, NULL);
 
     t2_dropdown_cities = lv_dropdown_create(t2);
     const char* dd_opts_city = "Karlskrona\nStockholm\nGothenburg\nHaparanda";
     lv_dropdown_set_options_static(t2_dropdown_cities, dd_opts_city);
+    lv_dropdown_set_selected(t2_dropdown_cities, 0);  // Default to Karlskrona
     lv_obj_set_width(t2_dropdown_cities, 200);
     lv_obj_align(t2_dropdown_cities, LV_ALIGN_TOP_LEFT, 0, 20);
 
@@ -180,12 +162,11 @@ static void create_ui()
     lv_obj_add_event_cb(t2_dropdown_cities, [](lv_event_t* e){
       lv_obj_t* dd = lv_event_get_target(e);
       t2_selected_city_index = lv_dropdown_get_selected(dd);
-      // call update function (defined below)
-      // small wrapper to keep style consistent with lv_timer callbacks
-      auto call = [](lv_timer_t* t){ (void)t; /* no-op placeholder */ };
-      // Direct call to update (safe here)
-      extern void update_t2_city_display(); // declare defined later
+      // Direct call to update immediately
+      extern void update_t2_city_display();
       update_t2_city_display();
+      extern void update_t2_param_display();
+      update_t2_param_display();  // Also update the parameter display for the new city
       // Also fetch an updated forecast for the newly selected city (if WiFi is ready)
       if (WiFi.status() == WL_CONNECTED) {
         ForecastDay days[7];
@@ -205,10 +186,10 @@ static void create_ui()
     lv_label_set_text(t3_label, "Loading...");
     lv_obj_set_style_text_font(t3_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t3_label);
-
-    // Light background with dark text for tile #3
-    apply_tile_colors(t3, t3_label, /*dark=*/false);
   }
+
+  // Set tileview to start at boot tile (0,0) after all tiles are created
+  lv_obj_set_tile_id(tileview, 0, 0, LV_ANIM_OFF);
 
    // Create a timer to refresh WiFi indicator on tile #1 every 1s
   lv_timer_create(wifi_indicator_timer_cb, 1000, NULL);
