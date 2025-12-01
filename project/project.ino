@@ -10,7 +10,6 @@
 #include <credentials.h>
 #include "weather_api.h"
 #include "wifi_manager.h"
-#include "weather_forecast.h"
 
 
 // PlatformIO automatically compile weather_forecast.cpp
@@ -31,10 +30,7 @@ static uint16_t t2_selected_index = 0; //
 static lv_obj_t* t2_dropdown_cities; //
 static lv_obj_t* t2_city_label; //
 static uint16_t t2_selected_city_index = 0; //
-static lv_obj_t* t4;
-static lv_obj_t* row_day[7];
-static lv_obj_t* row_icon[7];
-static lv_obj_t* row_temp[7];
+// Forecast UI (tile #4) removed
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
@@ -148,7 +144,7 @@ static void create_ui()
     }, LV_EVENT_VALUE_CHANGED, NULL);
 
     t2_dropdown_cities = lv_dropdown_create(t2);
-    const char* dd_opts_city = "Karlskrona\nStockholm\nGothenburg\nHaparanda";
+    const char* dd_opts_city = "Karlskrona\nStockholm\nGothenburg\nKiruna\nMalmo";
     lv_dropdown_set_options_static(t2_dropdown_cities, dd_opts_city);
     lv_dropdown_set_selected(t2_dropdown_cities, 0);  // Default to Karlskrona
     lv_obj_set_width(t2_dropdown_cities, 200);
@@ -168,15 +164,7 @@ static void create_ui()
       extern void update_t2_param_display();
       update_t2_param_display();  // Also update the parameter display for the new city
       // Also fetch an updated forecast for the newly selected city (if WiFi is ready)
-      if (WiFi.status() == WL_CONNECTED) {
-        ForecastDay days[7];
-        String status;
-        if (getSevenDayForecast(t2_selected_city_index, days, status)) {
-          update_forecast_ui(days);
-        } else {
-          Serial.println("Forecast failed: " + status);
-        }
-      }
+      
     }, LV_EVENT_VALUE_CHANGED, NULL);
 
     // Reset button: restores default parameter and city selection (INTE TESTAD ÄN)
@@ -230,61 +218,9 @@ static void create_ui()
   }, 5000, NULL);
 
   
-  // Tile #4 — Forecast
-  // Create the forecast UI (adds the tile and the rows)
-  create_forecast_ui();
   }
 
-static void create_forecast_ui() {
-    // Add Tile #4
-    t4 = lv_tileview_add_tile(tileview, 4, 0, LV_DIR_HOR);
-
-    // Create 7 rows for day, icon, and temperature
-    for (int i = 0; i < 7; i++) {
-        row_day[i] = lv_label_create(t4);
-        row_icon[i] = lv_label_create(t4);
-        row_temp[i] = lv_label_create(t4);
-
-        // Set font
-        lv_obj_set_style_text_font(row_day[i], &lv_font_montserrat_40, 0);
-        lv_obj_set_style_text_font(row_icon[i], &lv_font_montserrat_40, 0);
-        lv_obj_set_style_text_font(row_temp[i], &lv_font_montserrat_40, 0);
-
-        // Position labels in columns, Y shifts by 40 each row
-        int y = 20 + i * 40;
-        lv_obj_align(row_day[i], LV_ALIGN_TOP_LEFT, 10, y);
-        lv_obj_align(row_icon[i], LV_ALIGN_TOP_LEFT, 240, y);
-        lv_obj_align(row_temp[i], LV_ALIGN_TOP_LEFT, 450, y);
-
-        // Initialize with placeholder text
-        lv_label_set_text(row_day[i], "...");
-        lv_label_set_text(row_icon[i], "-");
-        lv_label_set_text(row_temp[i], "--°C");
-    }
-  }
-
-static void update_forecast_ui(ForecastDay days[7]) {
-    for (int i = 0; i < 7; i++) {
-        lv_label_set_text(row_day[i], days[i].date);
-
-        const char* icon = "?";
-        switch (days[i].symbol) {
-            case 1: icon = "☀"; break;
-            case 2: icon = "🌤"; break;
-            case 3: icon = "⛅"; break;
-            case 4: icon = "☁"; break;
-            case 5: icon = "🌫"; break;
-            case 6: icon = "🌧"; break;
-            case 7: icon = "🌦"; break;
-            case 8: icon = "⛈"; break;
-        }
-        lv_label_set_text(row_icon[i], icon);
-
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%.1f°C", days[i].temperature);
-        lv_label_set_text(row_temp[i], buf);
-    }
-}
+// Forecast UI and update functions removed (tile #4)
 
 // Must have function: Setup is run once on startup
 void setup()
@@ -311,32 +247,7 @@ void setup()
   initWiFi();
   // Start boot timer
   boot_start_ms = millis();
-  // 7-day forecast: update every hour
-  lv_timer_create([](lv_timer_t* timer) {
-      ForecastDay days[7];
-      String status;
-
-      if (getSevenDayForecast(0, days, status)) {
-          update_forecast_ui(days);
-      } else {
-          Serial.println("Forecast error: " + status);
-      }
-  }, 3600000, NULL);
-
-  // First update after 3 seconds (WiFi needs time)
-  lv_timer_create([](lv_timer_t* timer) {
-    if (WiFi.status() != WL_CONNECTED) return;  // wait for WiFi
-    ForecastDay days[7];
-    String status;
-    Serial.println("Fetching forecast...");
-    if (!getSevenDayForecast(0, days, status)) {
-        Serial.println("Forecast failed: " + status);
-    } else {
-        Serial.println("Forecast success");
-        update_forecast_ui(days);
-        lv_timer_del(timer);  // stop one-shot
-    }
-}, 5000, NULL);  // give WiFi a few seconds to connect
+    // Forecast fetch removed (tile #4 removed)
 }
 
 // Must have function: Loop runs continously on device after setup
@@ -408,7 +319,8 @@ void update_t2_param_display()
       }
       break;
     }
-    case 3: { // Humidity
+    
+    case 3: { // Humidity 
       float v = getCurrentHumidity(err);
       if (!isnan(v)) {
         snprintf(buf, sizeof(buf), "Humidity: %.1f %%", v);
@@ -448,7 +360,8 @@ void update_t2_city_display()
     case 0: cityName = "Karlskrona"; break;
     case 1: cityName = "Stockholm"; break;
     case 2: cityName = "Gothenburg"; break;
-    case 3: cityName = "Haparanda"; break;
+    case 3: cityName = "Kiruna"; break;
+    case 4: cityName = "Malmo"; break;
   }
 
   new_station = change_station_nr(cityName);

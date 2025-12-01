@@ -1,7 +1,6 @@
 #include "weather_api.h"
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <weather_forecast.h>
 #include <cstring>   
 
 int station_nr;
@@ -21,11 +20,13 @@ int change_station_nr(const char* new_station) {
   } else if (strcmp(new_station, "Gothenburg") == 0) {
     station_nr = 71420;
     return station_nr;
-  } else if (strcmp(new_station, "Haparanda") == 0) {
-    station_nr = 163960;
+  } else if (strcmp(new_station, "Kiruna") == 0) {
+    station_nr = 180940;
+    return station_nr;
+  } else if (strcmp(new_station, "Malmo") == 0) {
+    station_nr = 53300;
     return station_nr;
   }
-
   return -1; // Invalid station name
 }
 
