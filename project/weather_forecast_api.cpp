@@ -5,12 +5,19 @@
 #include <map>
 #include <vector>
 
-bool getWeatherForecastTemp(DailyForecast forecast[7], String& statusMsg, float lat, float lon) {
+bool getWeatherForecast(DailyForecast forecast[7], String& statusMsg, float lat, float lon, int parameterType) {
   // Initialize all forecast entries as invalid
   for (int i = 0; i < 7; i++) {
     forecast[i].valid = false;
     forecast[i].minTemp = NAN;
     forecast[i].maxTemp = NAN;
+    forecast[i].minWind = NAN;
+    forecast[i].maxWind = NAN;
+    forecast[i].totalRain = NAN;
+    forecast[i].minHumidity = NAN;
+    forecast[i].maxHumidity = NAN;
+    forecast[i].minPressure = NAN;
+    forecast[i].maxPressure = NAN;
     forecast[i].date = "";
   }
 
@@ -62,9 +69,13 @@ bool getWeatherForecastTemp(DailyForecast forecast[7], String& statusMsg, float 
     return false;
   }
 
-  // Use a map to store min/max temps for each day
-  // Key: date string (YYYY-MM-DD), Value: pair of vectors (temps for that day)
+  // Use maps to store all weather parameters for each day
+  // Key: date string (YYYY-MM-DD), Value: vectors of measurements
   std::map<String, std::vector<float>> dailyTemps;
+  std::map<String, std::vector<float>> dailyWinds;
+  std::map<String, std::vector<float>> dailyRain;
+  std::map<String, std::vector<float>> dailyHumidity;
+  std::map<String, std::vector<float>> dailyPressure;
   
   // Process each time entry in the forecast
   for (JsonObject entry : timeSeries) {
@@ -75,38 +86,115 @@ bool getWeatherForecastTemp(DailyForecast forecast[7], String& statusMsg, float 
     // Extract just the date part (first 10 characters: YYYY-MM-DD)
     String dateStr = String(timeStr).substring(0, 10);
     
-    // Get the data object which contains air_temperature
+    // Get the data object which contains all parameters
     JsonObject data = entry["data"].as<JsonObject>();
+    
+    // Collect all available parameters
     if (data.containsKey("air_temperature")) {
       float temp = data["air_temperature"].as<float>();
       dailyTemps[dateStr].push_back(temp);
     }
+    
+    if (data.containsKey("wind_speed")) {
+      float wind = data["wind_speed"].as<float>();
+      dailyWinds[dateStr].push_back(wind);
+    }
+    
+    if (data.containsKey("precipitation_amount_mean")) {
+      float rain = data["precipitation_amount_mean"].as<float>();
+      dailyRain[dateStr].push_back(rain);
+    }
+    
+    if (data.containsKey("relative_humidity")) {
+      float humidity = data["relative_humidity"].as<float>();
+      dailyHumidity[dateStr].push_back(humidity);
+    }
+    
+    if (data.containsKey("air_pressure_at_mean_sea_level")) {
+      float pressure = data["air_pressure_at_mean_sea_level"].as<float>();
+      dailyPressure[dateStr].push_back(pressure);
+    }
   }
 
-  // Convert the map to our forecast array (take first 7 days)
+  // Convert the maps to our forecast array (take first 7 days)
   int dayIndex = 0;
   for (auto& pair : dailyTemps) {
     if (dayIndex >= 7) break;
     
     const String& date = pair.first;
-    const std::vector<float>& temps = pair.second;
+    forecast[dayIndex].date = date;
+    forecast[dayIndex].valid = false;
     
+    // Process temperature
+    const std::vector<float>& temps = pair.second;
     if (temps.size() > 0) {
-      // Calculate min and max temperature for this day
       float minTemp = temps[0];
       float maxTemp = temps[0];
-      
       for (float temp : temps) {
         if (temp < minTemp) minTemp = temp;
         if (temp > maxTemp) maxTemp = temp;
       }
-      
-      forecast[dayIndex].date = date;
       forecast[dayIndex].minTemp = minTemp;
       forecast[dayIndex].maxTemp = maxTemp;
       forecast[dayIndex].valid = true;
-      dayIndex++;
     }
+    
+    // Process wind speed
+    if (dailyWinds.count(date) > 0) {
+      const std::vector<float>& winds = dailyWinds[date];
+      if (winds.size() > 0) {
+        float minWind = winds[0];
+        float maxWind = winds[0];
+        for (float wind : winds) {
+          if (wind < minWind) minWind = wind;
+          if (wind > maxWind) maxWind = wind;
+        }
+        forecast[dayIndex].minWind = minWind;
+        forecast[dayIndex].maxWind = maxWind;
+      }
+    }
+    
+    // Process precipitation (sum for the day)
+    if (dailyRain.count(date) > 0) {
+      const std::vector<float>& rains = dailyRain[date];
+      float totalRain = 0;
+      for (float rain : rains) {
+        totalRain += rain;
+      }
+      forecast[dayIndex].totalRain = totalRain;
+    }
+    
+    // Process humidity
+    if (dailyHumidity.count(date) > 0) {
+      const std::vector<float>& humidities = dailyHumidity[date];
+      if (humidities.size() > 0) {
+        float minHum = humidities[0];
+        float maxHum = humidities[0];
+        for (float hum : humidities) {
+          if (hum < minHum) minHum = hum;
+          if (hum > maxHum) maxHum = hum;
+        }
+        forecast[dayIndex].minHumidity = minHum;
+        forecast[dayIndex].maxHumidity = maxHum;
+      }
+    }
+    
+    // Process pressure
+    if (dailyPressure.count(date) > 0) {
+      const std::vector<float>& pressures = dailyPressure[date];
+      if (pressures.size() > 0) {
+        float minPres = pressures[0];
+        float maxPres = pressures[0];
+        for (float pres : pressures) {
+          if (pres < minPres) minPres = pres;
+          if (pres > maxPres) maxPres = pres;
+        }
+        forecast[dayIndex].minPressure = minPres;
+        forecast[dayIndex].maxPressure = maxPres;
+      }
+    }
+    
+    dayIndex++;
   }
 
   if (dayIndex == 0) {

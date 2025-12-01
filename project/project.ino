@@ -59,7 +59,7 @@ static void wifi_indicator_timer_cb(lv_timer_t* timer)
   }
 }
 
-// Timer callback: update 7-day forecast on tile #3 every 5 minutes
+// Timer callback: update 7-day forecast on tile #3 every 5 minutes 
 static void forecast_timer_cb(lv_timer_t* timer)
 {
   LV_UNUSED(timer);
@@ -81,18 +81,64 @@ static void forecast_timer_cb(lv_timer_t* timer)
   float lat = city_coordinates[t2_selected_city_index][0];
   float lon = city_coordinates[t2_selected_city_index][1];
   
-  if (getWeatherForecastTemp(forecast, statusMsg, lat, lon)) {
-    // Build display string with all 7 days
-    String displayText = "7-Day Forecast:\n\n";
+  if (getWeatherForecast(forecast, statusMsg, lat, lon, t2_selected_index)) {
+    // Build display string with all 7 days based on selected parameter
+    String paramName;
+    switch(t2_selected_index) {
+      case 0: paramName = "Temperature"; break;
+      case 1: paramName = "Wind Speed"; break;
+      case 2: paramName = "Precipitation"; break;
+      case 3: paramName = "Humidity"; break;
+      case 4: paramName = "Pressure"; break;
+      default: paramName = "Weather"; break;
+    }
+    
+    String displayText = "7-Day " + paramName + ":\n\n";
     
     for (int i = 0; i < 7; i++) {
       if (forecast[i].valid) {
         // Extract day name from date (simple version: just show date)
         String date = forecast[i].date.substring(5); // Show MM-DD
         
-        char line[64];
-        snprintf(line, sizeof(line), "%s: %.1f - %.1f°C\n", 
-                 date.c_str(), forecast[i].minTemp, forecast[i].maxTemp);
+        char line[80];
+        switch(t2_selected_index) {
+          case 0: // Temperature
+            snprintf(line, sizeof(line), "%s: %.1f - %.1f°C\n", 
+                     date.c_str(), forecast[i].minTemp, forecast[i].maxTemp);
+            break;
+          case 1: // Wind Speed
+            if (!isnan(forecast[i].minWind)) {
+              snprintf(line, sizeof(line), "%s: %.1f - %.1f m/s\n", 
+                       date.c_str(), forecast[i].minWind, forecast[i].maxWind);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+            }
+            break;
+          case 2: // Rain
+            if (!isnan(forecast[i].totalRain)) {
+              snprintf(line, sizeof(line), "%s: %.1f mm\n", 
+                       date.c_str(), forecast[i].totalRain);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+            }
+            break;
+          case 3: // Humidity
+            if (!isnan(forecast[i].minHumidity)) {
+              snprintf(line, sizeof(line), "%s: %.0f - %.0f%%\n", 
+                       date.c_str(), forecast[i].minHumidity, forecast[i].maxHumidity);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+            }
+            break;
+          case 4: // Pressure
+            if (!isnan(forecast[i].minPressure)) {
+              snprintf(line, sizeof(line), "%s: %.0f - %.0f hPa\n", 
+                       date.c_str(), forecast[i].minPressure, forecast[i].maxPressure);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+            }
+            break;
+        }
         displayText += line;
       }
     }
@@ -167,6 +213,8 @@ static void create_ui()
       // Direct call to update immediately
       extern void update_t2_param_display();
       update_t2_param_display();
+      // Also update the forecast display for the new parameter
+      forecast_timer_cb(NULL);
     }, LV_EVENT_VALUE_CHANGED, NULL);
 
     t2_dropdown_cities = lv_dropdown_create(t2);
