@@ -9,6 +9,7 @@
 #include <lvgl.h>
 #include <credentials.h>
 #include "weather_api.h"
+#include "weather_forecast_api.h"
 #include "wifi_manager.h"
 
 
@@ -19,11 +20,13 @@ static lv_obj_t* t1;
 static lv_obj_t* t_boot;
 static lv_obj_t* t2;
 static lv_obj_t* t3;
+static lv_obj_t* t4;
 static lv_obj_t* t1_label;
 static lv_obj_t* t1_wifi_indicator;  // WiFi status indicator for tile #1
 static lv_obj_t* t_boot_label;
 static lv_obj_t* t2_label;
 static lv_obj_t* t3_label;
+static lv_obj_t* t4_label;
 static lv_obj_t* t2_dropdown; //
 static lv_obj_t* t2_param_label; //
 static uint16_t t2_selected_index = 0; //
@@ -47,6 +50,48 @@ static void wifi_indicator_timer_cb(lv_timer_t* timer)
   } else {
     lv_label_set_text(t1_wifi_indicator, LV_SYMBOL_CLOSE);  // X
     lv_obj_set_style_text_color(t1_wifi_indicator, lv_color_make(200, 0, 0), 0);  // Red
+  }
+}
+
+// Timer callback: update 7-day forecast on tile #4 every 5 minutes
+static void forecast_timer_cb(lv_timer_t* timer)
+{
+  LV_UNUSED(timer);
+  if (!t4_label) return;
+  
+  // Check if WiFi is connected
+  if (WiFi.status() != WL_CONNECTED) {
+    lv_label_set_text(t4_label, "Waiting for WiFi...");
+    return;
+  }
+  
+  // WiFi is connected, fetch 7-day forecast
+  lv_label_set_text(t4_label, "Fetching forecast...");
+  
+  DailyForecast forecast[7];
+  String statusMsg;
+  
+  if (getWeatherForecastTemp(forecast, statusMsg)) {
+    // Build display string with all 7 days
+    String displayText = "7-Day Forecast:\n\n";
+    
+    for (int i = 0; i < 7; i++) {
+      if (forecast[i].valid) {
+        // Extract day name from date (simple version: just show date)
+        String date = forecast[i].date.substring(5); // Show MM-DD
+        
+        char line[64];
+        snprintf(line, sizeof(line), "%s: %.1f - %.1f°C\n", 
+                 date.c_str(), forecast[i].minTemp, forecast[i].maxTemp);
+        displayText += line;
+      }
+    }
+    
+    lv_label_set_text(t4_label, displayText.c_str());
+  } else {
+    char errorStr[64];
+    snprintf(errorStr, sizeof(errorStr), "Error:\n%s", statusMsg.c_str());
+    lv_label_set_text(t4_label, errorStr);
   }
 }
 
@@ -87,11 +132,12 @@ static void create_ui()
   lv_obj_set_size(tileview, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
   lv_obj_set_scrollbar_mode(tileview, LV_SCROLLBAR_MODE_OFF);
 
-  // Add tiles: boot screen at 0, then regular tiles at 1..2, and tile 3 (temperature)
+  // Add tiles: boot screen at 0, then regular tiles at 1..2, tile 3 (temperature), and tile 4 (forecast)
   t_boot = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_HOR);
   t1 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_HOR);
   t2 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR);
   t3 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_HOR);
+  t4 = lv_tileview_add_tile(tileview, 4, 0, LV_DIR_HOR);
 
     // Boot tile (shows first for a short time)
   {
@@ -199,13 +245,22 @@ static void create_ui()
     lv_obj_center(t3_label);
   }
 
+  // Tile #4 - 7-Day Temperature Forecast
+  {
+    t4_label = lv_label_create(t4);
+    lv_label_set_text(t4_label, "Loading forecast...");
+    lv_obj_set_style_text_font(t4_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_align(t4_label, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(t4_label, LV_ALIGN_TOP_LEFT, 10, 10);
+  }
+
   // Set tileview to start at boot tile (0,0) after all tiles are created
   lv_obj_set_tile_id(tileview, 0, 0, LV_ANIM_OFF);
 
    // Create a timer to refresh WiFi indicator on tile #1 every 1s
   lv_timer_create(wifi_indicator_timer_cb, 1000, NULL);
-  // Create a timer to refresh temperature every 5s (5000ms)
-  lv_timer_create(temperature_timer_cb, 5000, NULL);
+  // Create a timer to refresh temperature every 60s (60000ms)
+  lv_timer_create(temperature_timer_cb, 60000, NULL);
   // Create a timer to refresh the selected parameter on tile #2 every 10s
   lv_timer_create([](lv_timer_t* t){
     (void)t;
@@ -216,7 +271,13 @@ static void create_ui()
     temperature_timer_cb(t); 
     lv_timer_del(t); 
   }, 5000, NULL);
-
+  // Create a timer to refresh 7-day forecast every 30 seconds (30000ms)
+  lv_timer_create(forecast_timer_cb, 30000, NULL);
+  // Trigger first forecast fetch after 10 seconds to allow WiFi to connect
+  lv_timer_create([](lv_timer_t* t){ 
+    forecast_timer_cb(t); 
+    lv_timer_del(t); 
+  }, 10000, NULL);
   
   }
 
