@@ -5,10 +5,7 @@
 #include <map>
 #include <vector>
 
-// SMHI Forecast API endpoint for Karlskrona (lon: 15.5724, lat: 56.1622)
-const char* FORECAST_URL = "https://opendata-download-metfcst.smhi.se/api/category/snow1g/version/1/geotype/point/lon/15.5724/lat/56.1622/data.json";
-
-bool getWeatherForecastTemp(DailyForecast forecast[7], String& statusMsg) {
+bool getWeatherForecastTemp(DailyForecast forecast[7], String& statusMsg, float lat, float lon) {
   // Initialize all forecast entries as invalid
   for (int i = 0; i < 7; i++) {
     forecast[i].valid = false;
@@ -23,8 +20,15 @@ bool getWeatherForecastTemp(DailyForecast forecast[7], String& statusMsg) {
     return false;
   }
 
+  // Build the URL with the provided coordinates
+  String forecastUrl = "https://opendata-download-metfcst.smhi.se/api/category/snow1g/version/1/geotype/point/lon/";
+  forecastUrl += String(lon, 2);  // 2 decimal places
+  forecastUrl += "/lat/";
+  forecastUrl += String(lat, 2);  // 2 decimal places
+  forecastUrl += "/data.json";
+
   HTTPClient http;
-  http.begin(FORECAST_URL);
+  http.begin(forecastUrl);
   
   int httpCode = http.GET();
   

@@ -15,6 +15,7 @@ struct DailyForecast {
 // Returns true if successful, false otherwise
 // forecast array should have at least 7 elements
 // statusMsg will contain a user-friendly status message
-bool getWeatherForecastTemp(DailyForecast forecast[7], String& statusMsg);
+// lat and lon specify the location coordinates
+bool getWeatherForecastTemp(DailyForecast forecast[7], String& statusMsg, float lat, float lon);
 
 #endif

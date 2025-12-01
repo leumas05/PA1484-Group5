@@ -31,6 +31,14 @@ static uint16_t t2_selected_index = 0; //
 static lv_obj_t* t2_dropdown_cities; //
 static lv_obj_t* t2_city_label; //
 static uint16_t t2_selected_city_index = 0; //
+// City coordinates (lat, lon)
+static float city_coordinates[][2] = {
+  {56.16, 15.59},  // Karlskrona
+  {59.33, 18.07},  // Stockholm
+  {57.71, 11.97},  // Göteborg
+  {67.86, 20.23},  // Kiruna
+  {55.61, 13.00}   // Malmö
+};
 // Forecast UI (tile #4) removed
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
@@ -69,7 +77,11 @@ static void forecast_timer_cb(lv_timer_t* timer)
   DailyForecast forecast[7];
   String statusMsg;
   
-  if (getWeatherForecastTemp(forecast, statusMsg)) {
+  // Get coordinates for the currently selected city
+  float lat = city_coordinates[t2_selected_city_index][0];
+  float lon = city_coordinates[t2_selected_city_index][1];
+  
+  if (getWeatherForecastTemp(forecast, statusMsg, lat, lon)) {
     // Build display string with all 7 days
     String displayText = "7-Day Forecast:\n\n";
     
@@ -178,7 +190,7 @@ static void create_ui()
       extern void update_t2_param_display();
       update_t2_param_display();  // Also update the parameter display for the new city
       // Also fetch an updated forecast for the newly selected city (if WiFi is ready)
-      
+      forecast_timer_cb(NULL);  // Trigger immediate forecast update
     }, LV_EVENT_VALUE_CHANGED, NULL);
 
     // Reset button: restores default parameter and city selection (INTE TESTAD ÄN)
