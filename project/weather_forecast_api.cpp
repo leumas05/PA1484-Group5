@@ -29,9 +29,9 @@ bool getWeatherForecast(DailyForecast forecast[7], String& statusMsg, float lat,
 
   // Build the URL with the provided coordinates
   String forecastUrl = "https://opendata-download-metfcst.smhi.se/api/category/snow1g/version/1/geotype/point/lon/";
-  forecastUrl += String(lon, 4);  // 4 decimal places
+  forecastUrl += String(lon, 2);  // 2 decimal places
   forecastUrl += "/lat/";
-  forecastUrl += String(lat, 4);  // 4 decimal places
+  forecastUrl += String(lat, 2);  // 2 decimal places
   forecastUrl += "/data.json";
 
   HTTPClient http;
@@ -57,8 +57,7 @@ bool getWeatherForecast(DailyForecast forecast[7], String& statusMsg, float lat,
   DeserializationError error = deserializeJson(doc, payload);
   
   if (error) {
-    //statusMsg = "Parse error";
-    statusMsg = String(forecastUrl);
+    statusMsg = "Parse error";
     return false;
   }
 

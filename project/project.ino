@@ -25,8 +25,6 @@ static lv_obj_t* t1_wifi_indicator;  // WiFi status indicator for tile #1
 static lv_obj_t* t_boot_label;
 static lv_obj_t* t2_label;
 static lv_obj_t* t3_label;
-static lv_obj_t* t3_chart;           // Chart widget for forecast graph
-static lv_chart_series_t* t3_series; // Chart series for data
 static lv_obj_t* t2_dropdown; //
 static lv_obj_t* t2_param_label; //
 static uint16_t t2_selected_index = 0; //
@@ -35,11 +33,11 @@ static lv_obj_t* t2_city_label; //
 static uint16_t t2_selected_city_index = 0; //
 // City coordinates (lat, lon)
 static float city_coordinates[][2] = {
-  {56.5724, 15.1622},  // Karlskrona
-  {59.3266, 18.0704},  // Stockholm
-  {57.7020, 11.9726},  // Göteborg
-  {67.8450, 20.2316},  // Kiruna
-  {55.6142, 12.9843}   // Malmö
+  {56.16, 15.59},  // Karlskrona
+  {59.33, 18.07},  // Stockholm
+  {57.71, 11.97},  // Göteborg
+  {67.86, 20.23},  // Kiruna
+  {55.61, 13.00}   // Malmö
 };
 // Forecast UI (tile #4) removed
 static unsigned long boot_start_ms = 0;
@@ -65,7 +63,7 @@ static void wifi_indicator_timer_cb(lv_timer_t* timer)
 static void forecast_timer_cb(lv_timer_t* timer)
 {
   LV_UNUSED(timer);
-  if (!t3_label || !t3_chart || !t3_series) return;
+  if (!t3_label) return;
   
   // Check if WiFi is connected
   if (WiFi.status() != WL_CONNECTED) {
@@ -84,12 +82,8 @@ static void forecast_timer_cb(lv_timer_t* timer)
   float lon = city_coordinates[t2_selected_city_index][1];
   
   if (getWeatherForecast(forecast, statusMsg, lat, lon, t2_selected_index)) {
-    // Determine parameter name and collect data for chart
+    // Build display string with all 7 days based on selected parameter
     String paramName;
-    float minVal = 1000000;
-    float maxVal = -1000000;
-    lv_coord_t values[7];
-    
     switch(t2_selected_index) {
       case 0: paramName = "Temperature"; break;
       case 1: paramName = "Wind Speed"; break;
@@ -99,65 +93,60 @@ static void forecast_timer_cb(lv_timer_t* timer)
       default: paramName = "Weather"; break;
     }
     
-    // Collect values and find range
+    String displayText = "7-Day " + paramName + ":\n\n";
+    
     for (int i = 0; i < 7; i++) {
-      float val = 0;
       if (forecast[i].valid) {
+        // Extract day name from date (simple version: just show date)
+        String date = forecast[i].date.substring(5); // Show MM-DD
+        
+        char line[80];
         switch(t2_selected_index) {
-          case 0: // Temperature - use average of min and max
-            val = (forecast[i].minTemp + forecast[i].maxTemp) / 2.0;
+          case 0: // Temperature
+            snprintf(line, sizeof(line), "%s: %.1f - %.1f°C\n", 
+                     date.c_str(), forecast[i].minTemp, forecast[i].maxTemp);
             break;
-          case 1: // Wind Speed - use average
+          case 1: // Wind Speed
             if (!isnan(forecast[i].minWind)) {
-              val = (forecast[i].minWind + forecast[i].maxWind) / 2.0;
+              snprintf(line, sizeof(line), "%s: %.1f - %.1f m/s\n", 
+                       date.c_str(), forecast[i].minWind, forecast[i].maxWind);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
             }
             break;
-          case 2: // Rain - use total
+          case 2: // Rain
             if (!isnan(forecast[i].totalRain)) {
-              val = forecast[i].totalRain;
+              snprintf(line, sizeof(line), "%s: %.1f mm\n", 
+                       date.c_str(), forecast[i].totalRain);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
             }
             break;
-          case 3: // Humidity - use average
+          case 3: // Humidity
             if (!isnan(forecast[i].minHumidity)) {
-              val = (forecast[i].minHumidity + forecast[i].maxHumidity) / 2.0;
+              snprintf(line, sizeof(line), "%s: %.0f - %.0f%%\n", 
+                       date.c_str(), forecast[i].minHumidity, forecast[i].maxHumidity);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
             }
             break;
-          case 4: // Pressure - use average
+          case 4: // Pressure
             if (!isnan(forecast[i].minPressure)) {
-              val = (forecast[i].minPressure + forecast[i].maxPressure) / 2.0;
+              snprintf(line, sizeof(line), "%s: %.0f - %.0f hPa\n", 
+                       date.c_str(), forecast[i].minPressure, forecast[i].maxPressure);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
             }
             break;
         }
-        
-        if (val < minVal) minVal = val;
-        if (val > maxVal) maxVal = val;
+        displayText += line;
       }
-      values[i] = (lv_coord_t)val;
     }
     
-    // Add some margin to the range
-    float range = maxVal - minVal;
-    if (range < 1) range = 1; // Minimum range
-    minVal -= range * 0.1;
-    maxVal += range * 0.1;
-    
-    // Update chart range and data
-    lv_chart_set_range(t3_chart, LV_CHART_AXIS_PRIMARY_Y, (lv_coord_t)minVal, (lv_coord_t)maxVal);
-    
-    // Update series data - use proper LVGL API to set all points
-    lv_chart_set_all_value(t3_chart, t3_series, 0); // Clear existing values first
-    for (int i = 0; i < 7; i++) {
-      lv_chart_set_value_by_id(t3_chart, t3_series, i, values[i]);
-    }
-    lv_chart_refresh(t3_chart);
-    
-    // Update title
-    char title[64];
-    snprintf(title, sizeof(title), "7-Day %s Forecast", paramName.c_str());
-    lv_label_set_text(t3_label, title);
+    lv_label_set_text(t3_label, displayText.c_str());
   } else {
     char errorStr[64];
-    snprintf(errorStr, sizeof(errorStr), "Error: %s", statusMsg.c_str());
+    snprintf(errorStr, sizeof(errorStr), "Error:\n%s", statusMsg.c_str());
     lv_label_set_text(t3_label, errorStr);
   }
 }
@@ -276,32 +265,13 @@ static void create_ui()
     }
   }
 
-  // Tile #3 - 7-Day Forecast Graph
+  // Tile #3 - 7-Day Temperature Forecast
   {
-    // Create title label
     t3_label = lv_label_create(t3);
     lv_label_set_text(t3_label, "Loading forecast...");
     lv_obj_set_style_text_font(t3_label, &lv_font_montserrat_16, 0);
-    lv_obj_align(t3_label, LV_ALIGN_TOP_MID, 0, 5);
-    
-    // Create chart for forecast data
-    t3_chart = lv_chart_create(t3);
-    lv_obj_set_size(t3_chart, lv_disp_get_hor_res(NULL) - 40, lv_disp_get_ver_res(NULL) - 80);
-    lv_obj_align(t3_chart, LV_ALIGN_CENTER, 0, 10);
-    lv_chart_set_type(t3_chart, LV_CHART_TYPE_LINE);
-    lv_chart_set_point_count(t3_chart, 7); // 7 days
-    lv_chart_set_range(t3_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
-    lv_chart_set_axis_tick(t3_chart, LV_CHART_AXIS_PRIMARY_X, 0, 0, 7, 1, true, 50);
-    lv_chart_set_axis_tick(t3_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 0, 5, 2, true, 50);
-    lv_obj_set_style_size(t3_chart, 0, LV_PART_INDICATOR);
-    
-    // Add a series
-    t3_series = lv_chart_add_series(t3_chart, lv_palette_main(LV_PALETTE_BLUE), LV_CHART_AXIS_PRIMARY_Y);
-    
-    // Set initial dummy values
-    for (int i = 0; i < 7; i++) {
-      lv_chart_set_next_value(t3_chart, t3_series, 0);
-    }
+    lv_obj_set_style_text_align(t3_label, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(t3_label, LV_ALIGN_TOP_LEFT, 10, 10);
   }
 
   // Set tileview to start at boot tile (0,0) after all tiles are created
