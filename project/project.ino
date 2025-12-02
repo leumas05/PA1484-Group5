@@ -24,7 +24,6 @@ static lv_obj_t* t1_label;
 static lv_obj_t* t1_wifi_indicator;  // WiFi status indicator for tile #1
 static lv_obj_t* t_boot_label;
 static lv_obj_t* t2_label;
-static lv_obj_t* t3_label;
 static lv_obj_t* t2_dropdown; //
 static lv_obj_t* t2_param_label; //
 static uint16_t t2_selected_index = 0; //
@@ -39,7 +38,12 @@ static float city_coordinates[][2] = {
   {67.86, 20.23},  // Kiruna
   {55.61, 13.00}   // Malmö
 };
-// Forecast UI (tile #4) removed
+// Tile #3 chart widgets for forecast graph
+static lv_obj_t* t3_chart;
+static lv_chart_series_t* t3_series_min;
+static lv_chart_series_t* t3_series_max;
+static lv_obj_t* t3_title_label;
+static lv_obj_t* t3_date_labels[7];  // X-axis date labels
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
@@ -63,16 +67,16 @@ static void wifi_indicator_timer_cb(lv_timer_t* timer)
 static void forecast_timer_cb(lv_timer_t* timer)
 {
   LV_UNUSED(timer);
-  if (!t3_label) return;
+  if (!t3_chart || !t3_title_label) return;
   
   // Check if WiFi is connected
   if (WiFi.status() != WL_CONNECTED) {
-    lv_label_set_text(t3_label, "Waiting for WiFi...");
+    lv_label_set_text(t3_title_label, "Waiting for WiFi...");
     return;
   }
   
   // WiFi is connected, fetch 7-day forecast
-  lv_label_set_text(t3_label, "Fetching forecast...");
+  lv_label_set_text(t3_title_label, "Fetching forecast...");
   
   DailyForecast forecast[7];
   String statusMsg;
@@ -82,72 +86,156 @@ static void forecast_timer_cb(lv_timer_t* timer)
   float lon = city_coordinates[t2_selected_city_index][1];
   
     if (getWeatherForecast(forecast, statusMsg, lat, lon, t2_selected_index)) {
-    // Build display string with all 7 days based on selected parameter
+    // Build title based on selected parameter
     String paramName;
+    String unit;
     switch(t2_selected_index) {
-      case 0: paramName = "Temperature"; break;
-      case 1: paramName = "Wind Speed"; break;
-      case 2: paramName = "Precipitation"; break;
-      case 3: paramName = "Humidity"; break;
-      case 4: paramName = "Pressure"; break;
-      default: paramName = "Weather"; break;
+      case 0: paramName = "Temperature"; unit = "°C"; break;
+      case 1: paramName = "Wind Speed"; unit = "m/s"; break;
+      case 2: paramName = "Precipitation"; unit = "mm"; break;
+      case 3: paramName = "Humidity"; unit = "%"; break;
+      case 4: paramName = "Pressure"; unit = "hPa"; break;
+      default: paramName = "Weather"; unit = ""; break;
     }
     
-    String displayText = "7-Day " + paramName + ":\n\n";
+    // Get city name based on selected city index
+    const char* cityName = "Unknown";
+    switch(t2_selected_city_index) {
+      case 0: cityName = "Karlskrona"; break;
+      case 1: cityName = "Stockholm"; break;
+      case 2: cityName = "Gothenburg"; break;
+      case 3: cityName = "Kiruna"; break;
+      case 4: cityName = "Malmo"; break;
+    }
+    
+    String titleText = "7-Day Forecast in " + String(cityName) + " - " + paramName + " (" + unit + ")";
+    lv_label_set_text(t3_title_label, titleText.c_str());
+    
+    // Properly clear existing chart data by setting point count to 0 and back to 7
+    lv_chart_set_point_count(t3_chart, 0);
+    lv_chart_set_point_count(t3_chart, 7);
+    
+    // Also clear all values
+    lv_chart_set_all_value(t3_chart, t3_series_min, LV_CHART_POINT_NONE);
+    lv_chart_set_all_value(t3_chart, t3_series_max, LV_CHART_POINT_NONE);
+    
+    // First pass: find min/max values for Y-axis range
+    float globalMin = 999999;
+    float globalMax = -999999;
     
     for (int i = 0; i < 7; i++) {
       if (forecast[i].valid) {
-        // Extract day name from date (simple version: just show date)
-        String date = forecast[i].date.substring(5); // Show MM-DD
+        float minVal = NAN;
+        float maxVal = NAN;
         
-                char line[80];
         switch(t2_selected_index) {
           case 0: // Temperature
-            snprintf(line, sizeof(line), "%s: %.1f - %.1f°C\n", 
-                     date.c_str(), forecast[i].minTemp, forecast[i].maxTemp);
+            minVal = forecast[i].minTemp;
+            maxVal = forecast[i].maxTemp;
             break;
           case 1: // Wind Speed
             if (!isnan(forecast[i].minWind)) {
-              snprintf(line, sizeof(line), "%s: %.1f - %.1f m/s\n", 
-                       date.c_str(), forecast[i].minWind, forecast[i].maxWind);
-            } else {
-              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+              minVal = forecast[i].minWind;
+              maxVal = forecast[i].maxWind;
             }
             break;
           case 2: // Rain
             if (!isnan(forecast[i].totalRain)) {
-              snprintf(line, sizeof(line), "%s: %.1f mm\n", 
-                       date.c_str(), forecast[i].totalRain);
-            } else {
-              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+              minVal = forecast[i].totalRain;
+              maxVal = forecast[i].totalRain;
             }
             break;
           case 3: // Humidity
             if (!isnan(forecast[i].minHumidity)) {
-              snprintf(line, sizeof(line), "%s: %.0f - %.0f%%\n", 
-                       date.c_str(), forecast[i].minHumidity, forecast[i].maxHumidity);
-            } else {
-              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+              minVal = forecast[i].minHumidity;
+              maxVal = forecast[i].maxHumidity;
             }
             break;
           case 4: // Pressure
             if (!isnan(forecast[i].minPressure)) {
-              snprintf(line, sizeof(line), "%s: %.0f - %.0f hPa\n", 
-                       date.c_str(), forecast[i].minPressure, forecast[i].maxPressure);
-            } else {
-              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+              minVal = forecast[i].minPressure;
+              maxVal = forecast[i].maxPressure;
             }
             break;
         }
-        displayText += line;
+        
+        if (!isnan(minVal) && minVal < globalMin) globalMin = minVal;
+        if (!isnan(maxVal) && maxVal > globalMax) globalMax = maxVal;
       }
     }
     
-    lv_label_set_text(t3_label, displayText.c_str());
+    // Set Y-axis range with some padding
+    if (globalMin < 999999 && globalMax > -999999) {
+      float range = globalMax - globalMin;
+      int yMin = (int)(globalMin - range * 0.1);
+      int yMax = (int)(globalMax + range * 0.1);
+      lv_chart_set_range(t3_chart, LV_CHART_AXIS_PRIMARY_Y, yMin, yMax);
+    }
+    
+    // Second pass: update chart with forecast data
+    for (int i = 0; i < 7; i++) {
+      if (forecast[i].valid) {
+        int minVal = LV_CHART_POINT_NONE;
+        int maxVal = LV_CHART_POINT_NONE;
+        
+        switch(t2_selected_index) {
+          case 0: // Temperature - use average for cleaner single line
+            {
+              float avgTemp = (forecast[i].minTemp + forecast[i].maxTemp) / 2.0;
+              minVal = (int)avgTemp;
+              maxVal = (int)avgTemp;
+            }
+            break;
+          case 1: // Wind Speed
+            if (!isnan(forecast[i].minWind)) {
+              minVal = (int)forecast[i].minWind;
+              maxVal = (int)forecast[i].maxWind;
+            }
+            break;
+          case 2: // Rain
+            if (!isnan(forecast[i].totalRain)) {
+              minVal = (int)forecast[i].totalRain;
+              maxVal = (int)forecast[i].totalRain;
+            }
+            break;
+          case 3: // Humidity
+            if (!isnan(forecast[i].minHumidity)) {
+              minVal = (int)forecast[i].minHumidity;
+              maxVal = (int)forecast[i].maxHumidity;
+            }
+            break;
+          case 4: // Pressure
+            if (!isnan(forecast[i].minPressure)) {
+              minVal = (int)forecast[i].minPressure;
+              maxVal = (int)forecast[i].maxPressure;
+            }
+            break;
+        }
+        
+        lv_chart_set_next_value(t3_chart, t3_series_min, minVal);
+        lv_chart_set_next_value(t3_chart, t3_series_max, maxVal);
+      }
+    }
+    
+    // Set X-axis labels with dates (MM-DD format)
+    for (int i = 0; i < 7; i++) {
+      if (t3_date_labels[i]) {
+        if (forecast[i].valid && forecast[i].date.length() >= 10) {
+          String date = forecast[i].date.substring(5); // Get MM-DD
+          lv_label_set_text(t3_date_labels[i], date.c_str());
+        } else {
+          lv_label_set_text(t3_date_labels[i], "");
+        }
+      }
+    }
+    
+    lv_chart_set_axis_tick(t3_chart, LV_CHART_AXIS_PRIMARY_Y, 5, 3, 6, 1, true, 50);
+    
+    lv_chart_refresh(t3_chart);
   } else {
     char errorStr[64];
-    snprintf(errorStr, sizeof(errorStr), "Error:\n%s", statusMsg.c_str());
-    lv_label_set_text(t3_label, errorStr);
+    snprintf(errorStr, sizeof(errorStr), "Error: %s", statusMsg.c_str());
+    lv_label_set_text(t3_title_label, errorStr);
   }
 }
 
@@ -265,13 +353,55 @@ static void create_ui()
     }
   }
 
-  // Tile #3 - 7-Day Temperature Forecast
+  // Tile #3 - 7-Day Weather Forecast Graph
   {
-    t3_label = lv_label_create(t3);
-    lv_label_set_text(t3_label, "Loading forecast...");
-    lv_obj_set_style_text_font(t3_label, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_align(t3_label, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_align(t3_label, LV_ALIGN_TOP_LEFT, 10, 10);
+    // Title label at top
+    t3_title_label = lv_label_create(t3);
+    lv_label_set_text(t3_title_label, "Loading forecast...");
+    lv_obj_set_style_text_font(t3_title_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(t3_title_label, LV_ALIGN_TOP_MID, 0, 10);
+    
+    // Create chart
+    t3_chart = lv_chart_create(t3);
+    lv_obj_set_size(t3_chart, lv_disp_get_hor_res(NULL) - 60, lv_disp_get_ver_res(NULL) - 100);
+    lv_obj_align(t3_chart, LV_ALIGN_CENTER, 10, 0);
+    lv_chart_set_type(t3_chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(t3_chart, 7);
+    lv_chart_set_div_line_count(t3_chart, 5, 7);
+    
+    // Enable Y-axis tick labels to show values
+    lv_chart_set_axis_tick(t3_chart, LV_CHART_AXIS_PRIMARY_Y, 5, 3, 6, 1, true, 50);
+    
+    // Add two series: min and max values
+    t3_series_min = lv_chart_add_series(t3_chart, lv_palette_main(LV_PALETTE_BLUE), LV_CHART_AXIS_PRIMARY_Y);
+    t3_series_max = lv_chart_add_series(t3_chart, lv_palette_main(LV_PALETTE_RED), LV_CHART_AXIS_PRIMARY_Y);
+    
+    // Create X-axis date labels below the chart
+    int chart_width = lv_disp_get_hor_res(NULL) - 60;
+    int label_spacing = chart_width / 7;
+    int chart_bottom_y = (lv_disp_get_ver_res(NULL) / 2) + (lv_disp_get_ver_res(NULL) - 100) / 2;
+    
+    for (int i = 0; i < 7; i++) {
+      t3_date_labels[i] = lv_label_create(t3);
+      lv_label_set_text(t3_date_labels[i], "--");
+      lv_obj_set_style_text_font(t3_date_labels[i], &lv_font_montserrat_12, 0);
+      int x_pos = 30 + (i * label_spacing) + (label_spacing / 2);
+      lv_obj_set_pos(t3_date_labels[i], x_pos - 15, chart_bottom_y + 5);
+    }
+    
+    // Add refresh button in top-right corner
+    lv_obj_t* refresh_btn = lv_btn_create(t3);
+    lv_obj_set_size(refresh_btn, 80, 35);
+    lv_obj_align(refresh_btn, LV_ALIGN_TOP_RIGHT, -10, 10);
+    lv_obj_t* refresh_lbl = lv_label_create(refresh_btn);
+    lv_label_set_text(refresh_lbl, LV_SYMBOL_REFRESH " Refresh");
+    lv_obj_set_style_text_font(refresh_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_center(refresh_lbl);
+    lv_obj_add_event_cb(refresh_btn, [](lv_event_t* e){
+      LV_UNUSED(e);
+      // Trigger immediate forecast update
+      forecast_timer_cb(NULL);
+    }, LV_EVENT_CLICKED, NULL);
   }
 
   // Set tileview to start at boot tile (0,0) after all tiles are created
