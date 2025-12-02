@@ -9,11 +9,11 @@
 #include <lvgl.h>
 #include <credentials.h>
 #include "weather_api.h"
+#include "weather_forecast_api.h"
 #include "wifi_manager.h"
-#include "weather_forecast.h"
+
+
 // PlatformIO automatically compile weather_forecast.cpp
-
-
 LilyGo_Class amoled;
 static lv_obj_t* tileview;
 static lv_obj_t* t1;
@@ -25,38 +25,24 @@ static lv_obj_t* t1_wifi_indicator;  // WiFi status indicator for tile #1
 static lv_obj_t* t_boot_label;
 static lv_obj_t* t2_label;
 static lv_obj_t* t3_label;
-<<<<<<< HEAD
 static lv_obj_t* t2_dropdown; //
 static lv_obj_t* t2_param_label; //
 static uint16_t t2_selected_index = 0; //
-=======
-static lv_obj_t* t4;
-static lv_obj_t* row_day[7];
-static lv_obj_t* row_icon[7];
-static lv_obj_t* row_temp[7];
->>>>>>> 432d3883ca71bf551664fa0c21b0ef0123eff562
-static bool t2_dark = false;  // start tile #2 in light mode
+static lv_obj_t* t2_dropdown_cities; //
+static lv_obj_t* t2_city_label; //
+static uint16_t t2_selected_city_index = 0; //
+// City coordinates (lat, lon)
+static float city_coordinates[][2] = {
+  {56.16, 15.59},  // Karlskrona
+  {59.33, 18.07},  // Stockholm
+  {57.71, 11.97},  // Göteborg
+  {67.86, 20.23},  // Kiruna
+  {55.61, 13.00}   // Malmö
+};
+// Forecast UI (tile #4) removed
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
-
-// Function: Tile #2 Color change
-static void apply_tile_colors(lv_obj_t* tile, lv_obj_t* label, bool dark)
-{
-  // Background
-  lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
-  lv_obj_set_style_bg_color(tile, dark ? lv_color_black() : lv_color_white(), 0);
-
-  // Text
-  lv_obj_set_style_text_color(label, dark ? lv_color_white() : lv_color_black(), 0);
-}
-
-static void on_tile2_clicked(lv_event_t* e)
-{
-  LV_UNUSED(e);
-  t2_dark = !t2_dark;
-  apply_tile_colors(t2, t2_label, t2_dark);
-}
 
 // Timer callback: update WiFi status indicator on tile #1 every second
 static void wifi_indicator_timer_cb(lv_timer_t* timer)
@@ -73,8 +59,8 @@ static void wifi_indicator_timer_cb(lv_timer_t* timer)
   }
 }
 
-// Timer callback: update temperature on tile #3 every 60 seconds
-static void temperature_timer_cb(lv_timer_t* timer)
+// Timer callback: update 7-day forecast on tile #3 every 5 minutes 
+static void forecast_timer_cb(lv_timer_t* timer)
 {
   LV_UNUSED(timer);
   if (!t3_label) return;
@@ -85,19 +71,82 @@ static void temperature_timer_cb(lv_timer_t* timer)
     return;
   }
   
-  // WiFi is connected, fetch temperature
-  lv_label_set_text(t3_label, "Fetching temp...");
+  // WiFi is connected, fetch 7-day forecast
+  lv_label_set_text(t3_label, "Fetching forecast...");
   
+  DailyForecast forecast[7];
   String statusMsg;
-  lastTemperature = getCurrentTemperature(statusMsg);
   
-  if (!isnan(lastTemperature)) {
-    char tempStr[64];
-    snprintf(tempStr, sizeof(tempStr), "Temp: %.1f°C", lastTemperature);
-    lv_label_set_text(t3_label, tempStr);
+  // Get coordinates for the currently selected city
+  float lat = city_coordinates[t2_selected_city_index][0];
+  float lon = city_coordinates[t2_selected_city_index][1];
+  
+  if (getWeatherForecast(forecast, statusMsg, lat, lon, t2_selected_index)) {
+    // Build display string with all 7 days based on selected parameter
+    String paramName;
+    switch(t2_selected_index) {
+      case 0: paramName = "Temperature"; break;
+      case 1: paramName = "Wind Speed"; break;
+      case 2: paramName = "Precipitation"; break;
+      case 3: paramName = "Humidity"; break;
+      case 4: paramName = "Pressure"; break;
+      default: paramName = "Weather"; break;
+    }
+    
+    String displayText = "7-Day " + paramName + ":\n\n";
+    
+    for (int i = 0; i < 7; i++) {
+      if (forecast[i].valid) {
+        // Extract day name from date (simple version: just show date)
+        String date = forecast[i].date.substring(5); // Show MM-DD
+        
+        char line[80];
+        switch(t2_selected_index) {
+          case 0: // Temperature
+            snprintf(line, sizeof(line), "%s: %.1f - %.1f°C\n", 
+                     date.c_str(), forecast[i].minTemp, forecast[i].maxTemp);
+            break;
+          case 1: // Wind Speed
+            if (!isnan(forecast[i].minWind)) {
+              snprintf(line, sizeof(line), "%s: %.1f - %.1f m/s\n", 
+                       date.c_str(), forecast[i].minWind, forecast[i].maxWind);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+            }
+            break;
+          case 2: // Rain
+            if (!isnan(forecast[i].totalRain)) {
+              snprintf(line, sizeof(line), "%s: %.1f mm\n", 
+                       date.c_str(), forecast[i].totalRain);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+            }
+            break;
+          case 3: // Humidity
+            if (!isnan(forecast[i].minHumidity)) {
+              snprintf(line, sizeof(line), "%s: %.0f - %.0f%%\n", 
+                       date.c_str(), forecast[i].minHumidity, forecast[i].maxHumidity);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+            }
+            break;
+          case 4: // Pressure
+            if (!isnan(forecast[i].minPressure)) {
+              snprintf(line, sizeof(line), "%s: %.0f - %.0f hPa\n", 
+                       date.c_str(), forecast[i].minPressure, forecast[i].maxPressure);
+            } else {
+              snprintf(line, sizeof(line), "%s: N/A\n", date.c_str());
+            }
+            break;
+        }
+        displayText += line;
+      }
+    }
+    
+    lv_label_set_text(t3_label, displayText.c_str());
   } else {
     char errorStr[64];
-    snprintf(errorStr, sizeof(errorStr), "Error:\n(%s)", statusMsg.c_str());
+    snprintf(errorStr, sizeof(errorStr), "Error:\n%s", statusMsg.c_str());
     lv_label_set_text(t3_label, errorStr);
   }
 }
@@ -110,7 +159,7 @@ static void create_ui()
   lv_obj_set_size(tileview, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
   lv_obj_set_scrollbar_mode(tileview, LV_SCROLLBAR_MODE_OFF);
 
-  // Add tiles: boot screen at 0, then regular tiles at 1..2, and tile 3 (temperature)
+  // Add tiles: boot screen at 0, then regular tiles at 1..2, and tile 3 (7-day forecast)
   t_boot = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_HOR);
   t1 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_HOR);
   t2 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR);
@@ -119,19 +168,17 @@ static void create_ui()
     // Boot tile (shows first for a short time)
   {
     t_boot_label = lv_label_create(t_boot);
-    lv_label_set_text(t_boot_label, "Grupp 5 v.0.2");
+    lv_label_set_text(t_boot_label, "Grupp 5 v.0.3");
     lv_obj_set_style_text_font(t_boot_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t_boot_label);
-    apply_tile_colors(t_boot, t_boot_label, /*dark=*/false);
   }
 
   // Tile #1
   {
     t1_label = lv_label_create(t1);
-    lv_label_set_text(t1_label, "Hello World!");
+    lv_label_set_text(t1_label, "Welcome to WeAPP!");
     lv_obj_set_style_text_font(t1_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t1_label);
-    apply_tile_colors(t1, t1_label, /*dark=*/false);
     
     // Add WiFi indicator in top-right corner
     t1_wifi_indicator = lv_label_create(t1);
@@ -140,20 +187,18 @@ static void create_ui()
     lv_obj_align(t1_wifi_indicator, LV_ALIGN_TOP_RIGHT, -10, 10);
   }
 
-  // Tile #2
+  // Tile #2 SETTINGS TILE
   {
     t2_label = lv_label_create(t2);
-    lv_label_set_text(t2_label, "Hello World! 2");
+    lv_label_set_text(t2_label, "");
     lv_obj_set_style_text_font(t2_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t2_label);
 
-    apply_tile_colors(t2, t2_label, /*dark=*/false);
-    lv_obj_add_flag(t2, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(t2, on_tile2_clicked, LV_EVENT_CLICKED, NULL);
     // Dropdown to choose which weather parameter to show
     t2_dropdown = lv_dropdown_create(t2);
-    const char* dd_opts = "Temperature\nWind";
+    const char* dd_opts = "Temperature\nWind\nRain\nHumidity\nPressure";
     lv_dropdown_set_options_static(t2_dropdown, dd_opts);
+    lv_dropdown_set_selected(t2_dropdown, 0);  // Default to Temperature
     lv_obj_set_width(t2_dropdown, 200);
     lv_obj_align(t2_dropdown, LV_ALIGN_TOP_MID, 0, 20);
     // Label that shows the chosen parameter's current value
@@ -165,86 +210,91 @@ static void create_ui()
     lv_obj_add_event_cb(t2_dropdown, [](lv_event_t* e){
       lv_obj_t* dd = lv_event_get_target(e);
       t2_selected_index = lv_dropdown_get_selected(dd);
-      // call update function (defined below)
-      // small wrapper to keep style consistent with lv_timer callbacks
-      auto call = [](lv_timer_t* t){ (void)t; /* no-op placeholder */ };
-      // Direct call to update (safe here)
-      extern void update_t2_param_display(); // declare defined later
+      // Direct call to update immediately
+      extern void update_t2_param_display();
       update_t2_param_display();
+      // Also update the forecast display for the new parameter
+      forecast_timer_cb(NULL);
     }, LV_EVENT_VALUE_CHANGED, NULL);
+
+    t2_dropdown_cities = lv_dropdown_create(t2);
+    const char* dd_opts_city = "Karlskrona\nStockholm\nGothenburg\nKiruna\nMalmo";
+    lv_dropdown_set_options_static(t2_dropdown_cities, dd_opts_city);
+    lv_dropdown_set_selected(t2_dropdown_cities, 0);  // Default to Karlskrona
+    lv_obj_set_width(t2_dropdown_cities, 200);
+    lv_obj_align(t2_dropdown_cities, LV_ALIGN_TOP_LEFT, 0, 20);
+
+    t2_city_label = lv_label_create(t2);
+    lv_label_set_text(t2_city_label, "Select city...");
+    lv_obj_set_style_text_font(t2_city_label, &lv_font_montserrat_20, 0);
+    lv_obj_align_to(t2_city_label, t2_dropdown_cities, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
+
+    lv_obj_add_event_cb(t2_dropdown_cities, [](lv_event_t* e){
+      lv_obj_t* dd = lv_event_get_target(e);
+      t2_selected_city_index = lv_dropdown_get_selected(dd);
+      // Direct call to update immediately
+      extern void update_t2_city_display();
+      update_t2_city_display();
+      extern void update_t2_param_display();
+      update_t2_param_display();  // Also update the parameter display for the new city
+      // Also fetch an updated forecast for the newly selected city (if WiFi is ready)
+      forecast_timer_cb(NULL);  // Trigger immediate forecast update
+    }, LV_EVENT_VALUE_CHANGED, NULL);
+
+    // Reset button: restores default parameter and city selection (INTE TESTAD ÄN)
+    {
+      lv_obj_t* reset_btn = lv_btn_create(t2);
+      lv_obj_set_size(reset_btn, 120, 40);
+      lv_obj_align(reset_btn, LV_ALIGN_TOP_RIGHT, -10, 18);
+      lv_obj_t* lbl = lv_label_create(reset_btn);
+      lv_label_set_text(lbl, "Reset");
+      lv_obj_center(lbl);
+      lv_obj_add_event_cb(reset_btn, [](lv_event_t* e){
+        LV_UNUSED(e);
+        // Reset dropdown selections to defaults
+        if (t2_dropdown) lv_dropdown_set_selected(t2_dropdown, 0);
+        t2_selected_index = 0;
+        if (t2_dropdown_cities) lv_dropdown_set_selected(t2_dropdown_cities, 0);
+        t2_selected_city_index = 0;
+
+        // Update displays
+        update_t2_param_display();
+        update_t2_city_display();
+        
+      }, LV_EVENT_CLICKED, NULL);
+    }
   }
 
-  // Tile #3 - Temperature Display (formerly tile #4)
+  // Tile #3 - 7-Day Temperature Forecast
   {
     t3_label = lv_label_create(t3);
-    lv_label_set_text(t3_label, "Loading...");
-    lv_obj_set_style_text_font(t3_label, &lv_font_montserrat_28, 0);
-    lv_obj_center(t3_label);
-
-    // Light background with dark text for tile #3
-    apply_tile_colors(t3, t3_label, /*dark=*/false);
+    lv_label_set_text(t3_label, "Loading forecast...");
+    lv_obj_set_style_text_font(t3_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_align(t3_label, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(t3_label, LV_ALIGN_TOP_LEFT, 10, 10);
   }
 
-  // Create a timer to refresh WiFi indicator on tile #1 every 1s
+  // Set tileview to start at boot tile (0,0) after all tiles are created
+  lv_obj_set_tile_id(tileview, 0, 0, LV_ANIM_OFF);
+
+   // Create a timer to refresh WiFi indicator on tile #1 every 1s
   lv_timer_create(wifi_indicator_timer_cb, 1000, NULL);
-  // Create a timer to refresh temperature every 5s (5000ms)
-  lv_timer_create(temperature_timer_cb, 5000, NULL);
   // Create a timer to refresh the selected parameter on tile #2 every 10s
   lv_timer_create([](lv_timer_t* t){
     (void)t;
     update_t2_param_display();
   }, 10000, NULL);
-  // Trigger first temperature fetch after 5 seconds to allow WiFi to connect
+  // Create a timer to refresh 7-day forecast every 30 seconds (30000ms)
+  lv_timer_create(forecast_timer_cb, 30000, NULL);
+  // Trigger first forecast fetch after 10 seconds to allow WiFi to connect
   lv_timer_create([](lv_timer_t* t){ 
-    temperature_timer_cb(t); 
+    forecast_timer_cb(t); 
     lv_timer_del(t); 
-  }, 5000, NULL);
-  // Tile #4 — Forecast
-  t4 = lv_tileview_add_tile(tileview, 4, 0, LV_DIR_HOR);
-
-  for (int i = 0; i < 7; i++) {
-      row_day[i] = lv_label_create(t4);
-      row_icon[i] = lv_label_create(t4);
-      row_temp[i] = lv_label_create(t4);
-
-      lv_obj_set_style_text_font(row_day[i], &lv_font_montserrat_40, 0);
-      lv_obj_set_style_text_font(row_icon[i], &lv_font_montserrat_40, 0);
-      lv_obj_set_style_text_font(row_temp[i], &lv_font_montserrat_40, 0);
-
-      int y = 20 + i * 40; //Y-koordinate changing for each iteration (i*40) so we move downward
-      lv_obj_align(row_day[i], LV_ALIGN_TOP_LEFT, 10, y);
-      lv_obj_align(row_icon[i], LV_ALIGN_TOP_LEFT, 160, y);
-      lv_obj_align(row_temp[i], LV_ALIGN_TOP_LEFT, 220, y);
-
-      lv_label_set_text(row_day[i], "...");
-      lv_label_set_text(row_icon[i], "-");
-      lv_label_set_text(row_temp[i], "--°C");
+  }, 10000, NULL);
+  
   }
-}
 
-
-static void update_forecast_ui(ForecastDay days[7]) {
-    for (int i = 0; i < 7; i++) {
-        lv_label_set_text(row_day[i], days[i].date);
-
-        const char* icon = "?";
-        switch (days[i].symbol) {
-            case 1: icon = "☀"; break;
-            case 2: icon = "🌤"; break;
-            case 3: icon = "⛅"; break;
-            case 4: icon = "☁"; break;
-            case 5: icon = "🌫"; break;
-            case 6: icon = "🌧"; break;
-            case 7: icon = "🌦"; break;
-            case 8: icon = "⛈"; break;
-        }
-        lv_label_set_text(row_icon[i], icon);
-
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%.1f°C", days[i].temperature);
-        lv_label_set_text(row_temp[i], buf);
-    }
-}
+// Forecast UI and update functions removed (tile #4)
 
 // Must have function: Setup is run once on startup
 void setup()
@@ -271,29 +321,7 @@ void setup()
   initWiFi();
   // Start boot timer
   boot_start_ms = millis();
-  // 7-day forecast: update every hour
-  lv_timer_create([](lv_timer_t* timer) {
-      ForecastDay days[7];
-      String status;
-
-      if (getSevenDayForecast(0, days, status)) {
-          update_forecast_ui(days);
-      } else {
-          Serial.println("Forecast error: " + status);
-      }
-  }, 3600000, NULL);
-
-  // First update after 3 seconds (WiFi needs time)
-  lv_timer_create([](lv_timer_t* timer) {
-      ForecastDay days[7];
-      String status;
-
-      if (getSevenDayForecast(0, days, status)) {
-          update_forecast_ui(days);
-      }
-
-      lv_timer_del(timer);  // one-shot
-  }, 3000, NULL);
+    // Forecast fetch removed (tile #4 removed)
 }
 
 // Must have function: Loop runs continously on device after setup
@@ -339,7 +367,7 @@ void update_t2_param_display()
     case 1: { // Wind (show speed and direction together)
       String errSpeed, errDir;
       float speed = getCurrentWindSpeed(errSpeed);
-      int dir = getCurrentWindDirection(errDir);
+      float dir = getCurrentWindDirection(errDir);
       bool haveSpeed = !isnan(speed);
       bool haveDir = (dir >= 0);
 
@@ -356,6 +384,67 @@ void update_t2_param_display()
       }
       break;
     }
-
+    case 2: { // Rain
+      float v = getCurrentRain(err);
+      if (!isnan(v)) {
+        snprintf(buf, sizeof(buf), "Rain: %.1f mm", v);
+      } else {
+        snprintf(buf, sizeof(buf), "Rain err: %s", err.c_str());
+      }
+      break;
+    }
+    
+    case 3: { // Humidity 
+      float v = getCurrentHumidity(err);
+      if (!isnan(v)) {
+        snprintf(buf, sizeof(buf), "Humidity: %.1f %%", v);
+      } else {
+        snprintf(buf, sizeof(buf), "Humidity err: %s", err.c_str());
+      }
+      break;
+    }
+    case 4: { // Pressure
+      float v = getCurrentPressure(err);
+      if (!isnan(v)) {
+        snprintf(buf, sizeof(buf), "Pressure: %.1f hPa", v);
+      } else {
+        snprintf(buf, sizeof(buf), "Pressure err: %s", err.c_str());
+      }
+      break;
+    }
+  }
   lv_label_set_text(t2_param_label, buf);
+}
+
+void update_t2_city_display()
+{
+  if (!t2_city_label) return;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    lv_label_set_text(t2_city_label, "");
+    return;
+  }
+
+  String err;
+  char buf[128];
+  int new_station = -1;
+  const char* cityName = "Unknown";
+
+  switch (t2_selected_city_index) {
+    case 0: cityName = "Karlskrona"; break;
+    case 1: cityName = "Stockholm"; break;
+    case 2: cityName = "Gothenburg"; break;
+    case 3: cityName = "Kiruna"; break;
+    case 4: cityName = "Malmo"; break;
+  }
+
+  new_station = change_station_nr(cityName);
+
+  /*if (new_station > 0) {
+    snprintf(buf, sizeof(buf), "City: %s (Station %d)", cityName, new_station);
+  } else {
+    snprintf(buf, sizeof(buf), "City: %s", cityName);
+  }*/
+
+  lv_label_set_text(t2_city_label, buf);
 }
