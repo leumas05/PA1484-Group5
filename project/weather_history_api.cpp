@@ -47,11 +47,12 @@ bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String
     return false;
   }
 
-  // Simple ordered aggregation by date (preserve order of first encounter)
+  // Collect ALL dates from the JSON (up to 64 to handle full latest-months period safely)
   String dateList[64];
   float sum[64];
   int cnt[64];
   int dateCount = 0;
+  int totalDatesFound = 0;  // Track total unique dates found
 
   for (JsonObject v : values) {
     // Get date/time from common keys. Some endpoints return numeric epoch-ms in "date".
@@ -99,20 +100,43 @@ bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String
       if (dateList[i] == ds) { idx = i; break; }
     }
     if (idx < 0) {
-      if (dateCount >= maxDays) continue; // skip older entries beyond maxDays
-      idx = dateCount;
-      dateList[idx] = ds;
-      sum[idx] = 0.0f;
-      cnt[idx] = 0;
-      dateCount++;
+      // New date found
+      if (dateCount >= 64) {
+        // Array full - shift all entries left to drop oldest, add newest at end
+        totalDatesFound++;
+        for (int i = 0; i < 63; i++) {
+          dateList[i] = dateList[i + 1];
+          sum[i] = sum[i + 1];
+          cnt[i] = cnt[i + 1];
+        }
+        idx = 63;  // Use last slot for new date
+        dateList[idx] = ds;
+        sum[idx] = 0.0f;
+        cnt[idx] = 0;
+      } else {
+        // Still have space
+        idx = dateCount;
+        dateList[idx] = ds;
+        sum[idx] = 0.0f;
+        cnt[idx] = 0;
+        dateCount++;
+        totalDatesFound++;
+      }
     }
     sum[idx] += val;
     cnt[idx]++;
   }
 
-  // Fill output array in the order encountered (likely chronological)
+  // If array never filled, use actual count
+  if (dateCount < 64) {
+    totalDatesFound = dateCount;
+  }
+
+  // All entries in dateList now contain the MOST RECENT dates
+  // Take only maxDays from the end (most recent)
+  int startIdx = (dateCount > maxDays) ? (dateCount - maxDays) : 0;
   int filled = 0;
-  for (int i=0;i<dateCount && filled < maxDays;i++) {
+  for (int i = startIdx; i < dateCount && filled < maxDays; i++) {
     if (cnt[i] > 0) {
       history[filled].date = dateList[i];
       history[filled].avg = sum[i] / (float)cnt[i];

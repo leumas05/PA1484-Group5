@@ -52,8 +52,12 @@ static lv_obj_t* t3_symbol_labels[7];  // Symbol code labels
 static lv_obj_t* t4_chart;
 static lv_chart_series_t* t4_series;
 static lv_obj_t* t4_title_label;
-static lv_obj_t* t4_date_labels[31];  // X-axis date labels for history
+static lv_obj_t* t4_date_labels[7];  // X-axis date labels for visible window (7 days)
+static lv_obj_t* t4_slider;  // Vertical slider to select 7-day window
 static int t4_point_count = 0;
+static HistoryPoint t4_full_history[31];  // Store full month of data
+static int t4_full_days = 0;  // Number of valid days in full history
+static int t4_window_start = 0;  // Starting index of 7-day window (0-23)
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
@@ -237,43 +241,43 @@ static void forecast_timer_cb(lv_timer_t* timer)
         
         lv_chart_set_next_value(t3_chart, t3_series_min, minVal);
         lv_chart_set_next_value(t3_chart, t3_series_max, maxVal);
-        
-        // Position symbol label dynamically based on data value
-        if (t3_symbol_labels[i] && forecast[i].symbolCode >= 0 && globalMin < 999999 && globalMax > -999999) {
-          // Calculate Y position based on data value relative to chart range
-          float range = globalMax - globalMin;
-          float yMin = globalMin - range * 0.1;
-          float yMax = globalMax + range * 0.1;
-          float normalizedValue = (dataValue - yMin) / (yMax - yMin);
-          
-          // Chart Y increases downward, so we need to invert
-          int symbol_y = chart_y + chart_height - (int)(normalizedValue * chart_height) + 15;
-          int symbol_x = chart_x + (i * label_spacing) + (label_spacing / 2) - 8;
-          
-          lv_obj_set_pos(t3_symbol_labels[i], symbol_x, symbol_y);
-          
-          char symbolStr[8];
-          snprintf(symbolStr, sizeof(symbolStr), "%d", forecast[i].symbolCode);
-          lv_label_set_text(t3_symbol_labels[i], symbolStr);
-        }
       }
     }
     
-    // Set X-axis labels with dates (MM-DD format)
+    // Set X-axis labels with dates (MM-DD format) and position them to align with data points
+    // Get chart padding to calculate data point positions
+    lv_coord_t left_pad = lv_obj_get_style_pad_left(t3_chart, LV_PART_MAIN);
+    lv_coord_t right_pad = lv_obj_get_style_pad_right(t3_chart, LV_PART_MAIN);
+    int plot_area_width = chart_width - left_pad - right_pad;
+    int plot_x_start = chart_x + left_pad;
+    
     for (int i = 0; i < 7; i++) {
+      // Calculate X position to align with data points
+      int x_center = plot_x_start + (i * plot_area_width) / 7 + (plot_area_width / 14);
+      
       if (t3_date_labels[i]) {
         if (forecast[i].valid && forecast[i].date.length() >= 10) {
           String date = forecast[i].date.substring(5); // Get MM-DD
           lv_label_set_text(t3_date_labels[i], date.c_str());
+          
+          // Position date label centered under the data point
+          lv_obj_set_x(t3_date_labels[i], x_center - 15);
         } else {
           lv_label_set_text(t3_date_labels[i], "");
         }
       }
       
-      // Symbol labels are now positioned dynamically in the loop above
-      // Just clear any invalid ones here
+      // Position symbol codes above the date labels, aligned on X-axis
       if (t3_symbol_labels[i]) {
-        if (!forecast[i].valid || forecast[i].symbolCode < 0) {
+        if (forecast[i].valid && forecast[i].symbolCode >= 0) {
+          // Get the date label's Y position and place symbol code above it
+          int date_y = lv_obj_get_y(t3_date_labels[i]);
+          lv_obj_set_pos(t3_symbol_labels[i], x_center - 8, date_y - 40);
+          
+          char symbolStr[8];
+          snprintf(symbolStr, sizeof(symbolStr), "%d", forecast[i].symbolCode);
+          lv_label_set_text(t3_symbol_labels[i], symbolStr);
+        } else {
           lv_label_set_text(t3_symbol_labels[i], "");
         }
       }
@@ -438,24 +442,20 @@ static void create_ui()
     t3_series_min = lv_chart_add_series(t3_chart, lv_palette_main(LV_PALETTE_BLUE), LV_CHART_AXIS_PRIMARY_Y);
     t3_series_max = lv_chart_add_series(t3_chart, lv_palette_main(LV_PALETTE_RED), LV_CHART_AXIS_PRIMARY_Y);
     
-    // Create X-axis date labels below the chart
-    int chart_width = lv_disp_get_hor_res(NULL) - 60;
-    int label_spacing = chart_width / 7;
+    // Create X-axis date labels below the chart (will be positioned dynamically)
     int chart_bottom_y = (lv_disp_get_ver_res(NULL) / 2) + (lv_disp_get_ver_res(NULL) - 100) / 2;
     
     for (int i = 0; i < 7; i++) {
-      int x_pos = 30 + (i * label_spacing) + (label_spacing / 2);
-      
       // Create symbol code labels above the date labels (below the chart)
       t3_symbol_labels[i] = lv_label_create(t3);
       lv_label_set_text(t3_symbol_labels[i], "");
       lv_obj_set_style_text_font(t3_symbol_labels[i], &lv_font_montserrat_12, 0);
-      lv_obj_set_pos(t3_symbol_labels[i], x_pos - 8, chart_bottom_y - 18);
+      lv_obj_set_pos(t3_symbol_labels[i], 0, chart_bottom_y - 18);
       
       t3_date_labels[i] = lv_label_create(t3);
       lv_label_set_text(t3_date_labels[i], "--");
       lv_obj_set_style_text_font(t3_date_labels[i], &lv_font_montserrat_12, 0);
-      lv_obj_set_pos(t3_date_labels[i], x_pos - 15, chart_bottom_y + 5);
+      lv_obj_set_pos(t3_date_labels[i], 0, chart_bottom_y + 5);
     }
     
     // Add refresh button in top-right corner
@@ -473,7 +473,7 @@ static void create_ui()
     }, LV_EVENT_CLICKED, NULL);
   }
 
-  // Tile #4 - Weather History Graph (last ~30 days)
+  // Tile #4 - Weather History Graph (last 30 days, showing 7 at a time)
   {
     // Title label at top
     t4_title_label = lv_label_create(t4);
@@ -481,28 +481,51 @@ static void create_ui()
     lv_obj_set_style_text_font(t4_title_label, &lv_font_montserrat_16, 0);
     lv_obj_align(t4_title_label, LV_ALIGN_TOP_MID, 0, 10);
 
-    // Create chart
+    // Create vertical slider on the right side
+    t4_slider = lv_slider_create(t4);
+    lv_obj_set_size(t4_slider, 20, lv_disp_get_ver_res(NULL) - 120);  // Vertical slider
+    lv_obj_align(t4_slider, LV_ALIGN_RIGHT_MID, -5, 0);
+    lv_slider_set_range(t4_slider, 0, 23);  // 0-23 allows 7-day window (0-6 to 23-30)
+    lv_slider_set_value(t4_slider, 0, LV_ANIM_OFF);
+    
+    // Slider event callback to update displayed window
+    lv_obj_add_event_cb(t4_slider, [](lv_event_t* e){
+      LV_UNUSED(e);
+      extern void update_t4_display_window();
+      update_t4_display_window();
+    }, LV_EVENT_VALUE_CHANGED, NULL);
+
+    // Create chart (showing 7 days at a time)
     t4_chart = lv_chart_create(t4);
-    lv_obj_set_size(t4_chart, lv_disp_get_hor_res(NULL) - 60, lv_disp_get_ver_res(NULL) - 100);
-    lv_obj_align(t4_chart, LV_ALIGN_CENTER, 10, 0);
+    lv_obj_set_size(t4_chart, lv_disp_get_hor_res(NULL) - 100, lv_disp_get_ver_res(NULL) - 100);
+    lv_obj_align(t4_chart, LV_ALIGN_CENTER, -10, 0);
     lv_chart_set_type(t4_chart, LV_CHART_TYPE_LINE);
-    lv_chart_set_point_count(t4_chart, 30); // default to 30 days
+    lv_chart_set_point_count(t4_chart, 7); // Show 7 days
     lv_chart_set_div_line_count(t4_chart, 5, 7);
     lv_chart_set_axis_tick(t4_chart, LV_CHART_AXIS_PRIMARY_Y, 5, 3, 6, 1, true, 50);
 
     // Add one series for daily average temperature
     t4_series = lv_chart_add_series(t4_chart, lv_palette_main(LV_PALETTE_GREEN), LV_CHART_AXIS_PRIMARY_Y);
 
-    // Create X-axis date labels below the chart (30 max)
-    int chart_width = lv_disp_get_hor_res(NULL) - 60;
-    int label_spacing = chart_width / 30;
+    // Create X-axis date labels below the chart (7 visible days)
+    int chart_width = lv_disp_get_hor_res(NULL) - 100;
+    int label_spacing = chart_width / 7;
     int chart_bottom_y = (lv_disp_get_ver_res(NULL) / 2) + (lv_disp_get_ver_res(NULL) - 100) / 2;
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 7; i++) {
       t4_date_labels[i] = lv_label_create(t4);
       lv_label_set_text(t4_date_labels[i], "--");
       lv_obj_set_style_text_font(t4_date_labels[i], &lv_font_montserrat_12, 0);
-      int x_pos = 30 + (i * label_spacing) + (label_spacing / 2);
+      int x_pos = (i * label_spacing) + (label_spacing / 2) - 10;
       lv_obj_set_pos(t4_date_labels[i], x_pos - 12, chart_bottom_y + 5);
+    }
+    
+    // Initialize full history storage
+    t4_full_days = 0;
+    t4_window_start = 0;
+    for (int i=0; i<31; i++) {
+      t4_full_history[i].date = "";
+      t4_full_history[i].avg = NAN;
+      t4_full_history[i].valid = false;
     }
 
     // Add refresh button in top-right corner
@@ -698,6 +721,69 @@ void update_t2_city_display()
 }
 
 // Timer callback: update weather history on tile #4
+// Helper function to update the 7-day display window based on slider position
+void update_t4_display_window()
+{
+  if (!t4_chart || !t4_slider || t4_full_days <= 0) return;
+
+  // Get slider value (0-23)
+  t4_window_start = lv_slider_get_value(t4_slider);
+  
+  // Ensure we don't go beyond available data
+  if (t4_window_start + 7 > t4_full_days) {
+    t4_window_start = (t4_full_days > 7) ? (t4_full_days - 7) : 0;
+  }
+
+  // Calculate range for the visible window
+  float windowMin = 999999;
+  float windowMax = -999999;
+  for (int i = t4_window_start; i < t4_window_start + 7 && i < t4_full_days; i++) {
+    if (t4_full_history[i].valid && !isnan(t4_full_history[i].avg)) {
+      if (t4_full_history[i].avg < windowMin) windowMin = t4_full_history[i].avg;
+      if (t4_full_history[i].avg > windowMax) windowMax = t4_full_history[i].avg;
+    }
+  }
+  
+  if (windowMin < 999999 && windowMax > -999999) {
+    float range = windowMax - windowMin;
+    int yMin = (int)(windowMin - range * 0.1);
+    int yMax = (int)(windowMax + range * 0.1);
+    lv_chart_set_range(t4_chart, LV_CHART_AXIS_PRIMARY_Y, yMin, yMax);
+  }
+
+  // Update chart with 7-day window
+  lv_chart_set_all_value(t4_chart, t4_series, LV_CHART_POINT_NONE);
+  
+  for (int i = 0; i < 7; i++) {
+    int dataIdx = t4_window_start + i;
+    if (dataIdx < t4_full_days) {
+      int val = LV_CHART_POINT_NONE;
+      if (t4_full_history[dataIdx].valid && !isnan(t4_full_history[dataIdx].avg)) {
+        val = (int)t4_full_history[dataIdx].avg;
+      }
+      lv_chart_set_next_value(t4_chart, t4_series, val);
+      
+      // Update date label
+      if (t4_date_labels[i]) {
+        if (t4_full_history[dataIdx].valid && t4_full_history[dataIdx].date.length() >= 10) {
+          String d = t4_full_history[dataIdx].date.substring(5); // MM-DD
+          lv_label_set_text(t4_date_labels[i], d.c_str());
+        } else {
+          lv_label_set_text(t4_date_labels[i], "");
+        }
+      }
+    } else {
+      // No more data
+      lv_chart_set_next_value(t4_chart, t4_series, LV_CHART_POINT_NONE);
+      if (t4_date_labels[i]) {
+        lv_label_set_text(t4_date_labels[i], "");
+      }
+    }
+  }
+
+  lv_chart_refresh(t4_chart);
+}
+
 void history_timer_cb(lv_timer_t* timer)
 {
   LV_UNUSED(timer);
@@ -744,44 +830,20 @@ void history_timer_cb(lv_timer_t* timer)
     return;
   }
 
-  // Update chart range
-  float globalMin = 999999;
-  float globalMax = -999999;
-  for (int i=0;i<outDays;i++) {
-    if (history[i].valid) {
-      if (!isnan(history[i].avg)) {
-        if (history[i].avg < globalMin) globalMin = history[i].avg;
-        if (history[i].avg > globalMax) globalMax = history[i].avg;
-      }
-    }
-  }
-  if (globalMin < 999999 && globalMax > -999999) {
-    float range = globalMax - globalMin;
-    int yMin = (int)(globalMin - range * 0.1);
-    int yMax = (int)(globalMax + range * 0.1);
-    lv_chart_set_range(t4_chart, LV_CHART_AXIS_PRIMARY_Y, yMin, yMax);
+  // Store full history data in REVERSE order (most recent first)
+  t4_full_days = outDays;
+  for (int i = 0; i < outDays && i < 31; i++) {
+    t4_full_history[i] = history[outDays - 1 - i];  // Reverse order
   }
 
-  // Update chart points
-  lv_chart_set_point_count(t4_chart, 0);
-  lv_chart_set_point_count(t4_chart, outDays);
-  lv_chart_set_all_value(t4_chart, t4_series, LV_CHART_POINT_NONE);
-
-  for (int i=0;i<outDays;i++) {
-    int val = LV_CHART_POINT_NONE;
-    if (history[i].valid && !isnan(history[i].avg)) val = (int)history[i].avg;
-    lv_chart_set_next_value(t4_chart, t4_series, val);
-    // Update date labels (show MM-DD)
-    if (t4_date_labels[i]) {
-      if (history[i].valid && history[i].date.length() >= 10) {
-        String d = history[i].date.substring(5); // MM-DD
-        lv_label_set_text(t4_date_labels[i], d.c_str());
-      } else {
-        lv_label_set_text(t4_date_labels[i], "");
-      }
-    }
+  // Reset window to start (most recent data)
+  t4_window_start = 0;
+  if (t4_slider) {
+    lv_slider_set_value(t4_slider, 0, LV_ANIM_OFF);
   }
 
-  lv_chart_refresh(t4_chart);
+  // Update the display with the initial 7-day window
+  update_t4_display_window();
+  
   lv_label_set_text(t4_title_label, "History (daily avg °C)");
 }
