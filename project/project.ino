@@ -812,13 +812,23 @@ void history_timer_cb(lv_timer_t* timer)
     return;
   }
 
+  // Map t2_selected_index to SMHI parameter ID
+  int parameter_id = 1; // Default: Temperature
+  switch(t2_selected_index) {
+    case 0: parameter_id = 1; break;  // Temperature
+    case 1: parameter_id = 4; break;  // Wind Speed
+    case 2: parameter_id = 7; break;  // Precipitation
+    case 3: parameter_id = 6; break;  // Humidity
+    case 4: parameter_id = 9; break;  // Pressure
+  }
+
   // Fetch history (daily averages) for up to 30 days
   HistoryPoint history[31];
   for (int i=0;i<31;i++) { history[i].date=""; history[i].avg = NAN; history[i].valid=false; }
   int outDays = 0;
   String statusMsg;
 
-  if (!getWeatherHistory((HistoryPoint*)history, 30, outDays, statusMsg, station)) {
+  if (!getWeatherHistory((HistoryPoint*)history, 30, outDays, statusMsg, station, parameter_id)) {
     char buf[64];
     snprintf(buf, sizeof(buf), "Err: %s", statusMsg.c_str());
     lv_label_set_text(t4_title_label, buf);
@@ -845,5 +855,19 @@ void history_timer_cb(lv_timer_t* timer)
   // Update the display with the initial 7-day window
   update_t4_display_window();
   
-  lv_label_set_text(t4_title_label, "History (daily avg °C)");
+  // Build title with city name and parameter name
+  String paramName;
+  String unit;
+  switch(t2_selected_index) {
+    case 0: paramName = "Temperature"; unit = "°C"; break;
+    case 1: paramName = "Wind Speed"; unit = "m/s"; break;
+    case 2: paramName = "Precipitation"; unit = "mm"; break;
+    case 3: paramName = "Humidity"; unit = "%"; break;
+    case 4: paramName = "Pressure"; unit = "hPa"; break;
+    default: paramName = "Weather"; unit = ""; break;
+  }
+  
+  char titleBuf[100];
+  snprintf(titleBuf, sizeof(titleBuf), "History in %s - %s (%s)", cityName, paramName.c_str(), unit.c_str());
+  lv_label_set_text(t4_title_label, titleBuf);
 }

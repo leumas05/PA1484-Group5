@@ -4,7 +4,7 @@
 #include <WiFi.h>
 #include <time.h>
 
-bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String &statusMsg, int station_nr) {
+bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String &statusMsg, int station_nr, int parameter_id) {
   // Initialize
   outDays = 0;
   for (int i=0;i<maxDays;i++) {
@@ -18,8 +18,8 @@ bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String
     return false;
   }
 
-  // Build URL for parameter 1 (temperature) -- latest months
-  String url = String("https://opendata-download-metobs.smhi.se/api/version/latest/parameter/1/station/") + String(station_nr) + String("/period/latest-months/data.json");
+  // Build URL for the specified parameter -- latest months
+  String url = String("https://opendata-download-metobs.smhi.se/api/version/latest/parameter/") + String(parameter_id) + String("/station/") + String(station_nr) + String("/period/latest-months/data.json");
 
   HTTPClient http;
   http.begin(url);

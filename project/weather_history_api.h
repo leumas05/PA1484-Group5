@@ -16,7 +16,8 @@ struct HistoryPoint {
 // - outDays: returns the number of days actually filled
 // - statusMsg: human readable status on error
 // - station_nr: SMHI station id (e.g., 65090)
+// - parameter_id: SMHI parameter id (1=temp, 4=wind, 7=rain, 6=humidity, 9=pressure)
 // Returns true on success and fills history/outDays
-bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String &statusMsg, int station_nr);
+bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String &statusMsg, int station_nr, int parameter_id);
 
 #endif
