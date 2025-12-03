@@ -76,6 +76,7 @@ bool getWeatherForecast(DailyForecast forecast[7], String& statusMsg, float lat,
   std::map<String, std::vector<float>> dailyRain;
   std::map<String, std::vector<float>> dailyHumidity;
   std::map<String, std::vector<float>> dailyPressure;
+  //std::map<String> dailySymbol;
   
   // Process each time entry in the forecast
   for (JsonObject entry : timeSeries) {
@@ -114,6 +115,11 @@ bool getWeatherForecast(DailyForecast forecast[7], String& statusMsg, float lat,
       float pressure = data["air_pressure_at_mean_sea_level"].as<float>();
       dailyPressure[dateStr].push_back(pressure);
     }
+
+    /*if (data.containsKey("symbol_code")) {
+      float symbol_code = data["symbol_code"].as<float>();
+      dailySymbol[dataStr].push_back(symbol_code);
+    }*/
   }
 
     // Convert the maps to our forecast array (take first 7 days)

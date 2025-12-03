@@ -10,6 +10,7 @@
 #include <credentials.h>
 #include "weather_api.h"
 #include "weather_forecast_api.h"
+#include "weather_history_api.h"
 #include "wifi_manager.h"
 
 
@@ -44,6 +45,12 @@ static lv_chart_series_t* t3_series_min;
 static lv_chart_series_t* t3_series_max;
 static lv_obj_t* t3_title_label;
 static lv_obj_t* t3_date_labels[7];  // X-axis date labels
+// Tile #4 globals (history)
+static lv_obj_t* t4_chart;
+static lv_chart_series_t* t4_series;
+static lv_obj_t* t4_title_label;
+static lv_obj_t* t4_date_labels[31];  // X-axis date labels for history
+static int t4_point_count = 0;
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
@@ -252,6 +259,8 @@ static void create_ui()
   t1 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_HOR);
   t2 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR);
   t3 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_HOR);
+  // Tile #4 (Weather History)
+  lv_obj_t* t4 = lv_tileview_add_tile(tileview, 4, 0, LV_DIR_HOR);
 
     // Boot tile (shows first for a short time)
   {
@@ -303,6 +312,9 @@ static void create_ui()
       update_t2_param_display();
       // Also update the forecast display for the new parameter
       forecast_timer_cb(NULL);
+      // Also update history display (tile #4) for the new parameter
+      extern void history_timer_cb(lv_timer_t* t);
+      history_timer_cb(NULL);
     }, LV_EVENT_VALUE_CHANGED, NULL);
 
     t2_dropdown_cities = lv_dropdown_create(t2);
@@ -327,6 +339,9 @@ static void create_ui()
       update_t2_param_display();  // Also update the parameter display for the new city
       // Also fetch an updated forecast for the newly selected city (if WiFi is ready)
       forecast_timer_cb(NULL);  // Trigger immediate forecast update
+      // Also update history display (tile #4) for the new city
+      extern void history_timer_cb(lv_timer_t* t);
+      history_timer_cb(NULL);
     }, LV_EVENT_VALUE_CHANGED, NULL);
 
     // Reset button: restores default parameter and city selection (INTE TESTAD ÄN)
@@ -348,6 +363,10 @@ static void create_ui()
         // Update displays
         update_t2_param_display();
         update_t2_city_display();
+        // Refresh forecast and history after reset
+        forecast_timer_cb(NULL);
+        extern void history_timer_cb(lv_timer_t* t);
+        history_timer_cb(NULL);
         
       }, LV_EVENT_CLICKED, NULL);
     }
@@ -401,6 +420,55 @@ static void create_ui()
       LV_UNUSED(e);
       // Trigger immediate forecast update
       forecast_timer_cb(NULL);
+    }, LV_EVENT_CLICKED, NULL);
+  }
+
+  // Tile #4 - Weather History Graph (last ~30 days)
+  {
+    // Title label at top
+    t4_title_label = lv_label_create(t4);
+    lv_label_set_text(t4_title_label, "Loading history...");
+    lv_obj_set_style_text_font(t4_title_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(t4_title_label, LV_ALIGN_TOP_MID, 0, 10);
+
+    // Create chart
+    t4_chart = lv_chart_create(t4);
+    lv_obj_set_size(t4_chart, lv_disp_get_hor_res(NULL) - 60, lv_disp_get_ver_res(NULL) - 100);
+    lv_obj_align(t4_chart, LV_ALIGN_CENTER, 10, 0);
+    lv_chart_set_type(t4_chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(t4_chart, 30); // default to 30 days
+    lv_chart_set_div_line_count(t4_chart, 5, 7);
+    lv_chart_set_axis_tick(t4_chart, LV_CHART_AXIS_PRIMARY_Y, 5, 3, 6, 1, true, 50);
+
+    // Add one series for daily average temperature
+    t4_series = lv_chart_add_series(t4_chart, lv_palette_main(LV_PALETTE_GREEN), LV_CHART_AXIS_PRIMARY_Y);
+
+    // Create X-axis date labels below the chart (30 max)
+    int chart_width = lv_disp_get_hor_res(NULL) - 60;
+    int label_spacing = chart_width / 30;
+    int chart_bottom_y = (lv_disp_get_ver_res(NULL) / 2) + (lv_disp_get_ver_res(NULL) - 100) / 2;
+    for (int i = 0; i < 30; i++) {
+      t4_date_labels[i] = lv_label_create(t4);
+      lv_label_set_text(t4_date_labels[i], "--");
+      lv_obj_set_style_text_font(t4_date_labels[i], &lv_font_montserrat_12, 0);
+      int x_pos = 30 + (i * label_spacing) + (label_spacing / 2);
+      lv_obj_set_pos(t4_date_labels[i], x_pos - 12, chart_bottom_y + 5);
+    }
+
+    // Add refresh button in top-right corner
+    lv_obj_t* refresh_btn4 = lv_btn_create(t4);
+    lv_obj_set_size(refresh_btn4, 80, 35);
+    lv_obj_align(refresh_btn4, LV_ALIGN_TOP_RIGHT, -10, 10);
+    lv_obj_t* refresh_lbl4 = lv_label_create(refresh_btn4);
+    lv_label_set_text(refresh_lbl4, LV_SYMBOL_REFRESH " Refresh");
+    lv_obj_set_style_text_font(refresh_lbl4, &lv_font_montserrat_12, 0);
+    lv_obj_center(refresh_lbl4);
+    // Refresh callback triggers history fetch
+    lv_obj_add_event_cb(refresh_btn4, [](lv_event_t* e){
+      LV_UNUSED(e);
+      // Trigger immediate history update
+      extern void history_timer_cb(lv_timer_t* t);
+      history_timer_cb(NULL);
     }, LV_EVENT_CLICKED, NULL);
   }
 
@@ -577,4 +645,93 @@ void update_t2_city_display()
   }*/
 
   lv_label_set_text(t2_city_label, buf);
+}
+
+// Timer callback: update weather history on tile #4
+void history_timer_cb(lv_timer_t* timer)
+{
+  LV_UNUSED(timer);
+  if (!t4_chart || !t4_title_label) return;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    lv_label_set_text(t4_title_label, "Waiting for WiFi...");
+    return;
+  }
+
+  lv_label_set_text(t4_title_label, "Fetching history...");
+
+  // Determine station based on selected city index
+  const char* cityName = "Unknown";
+  switch(t2_selected_city_index) {
+    case 0: cityName = "Karlskrona"; break;
+    case 1: cityName = "Stockholm"; break;
+    case 2: cityName = "Gothenburg"; break;
+    case 3: cityName = "Kiruna"; break;
+    case 4: cityName = "Malmo"; break;
+  }
+
+  int station = change_station_nr(cityName);
+  if (station < 0) {
+    lv_label_set_text(t4_title_label, "Unknown station");
+    return;
+  }
+
+  // Fetch history (daily averages) for up to 30 days
+  HistoryPoint history[31];
+  for (int i=0;i<31;i++) { history[i].date=""; history[i].avg = NAN; history[i].valid=false; }
+  int outDays = 0;
+  String statusMsg;
+
+  if (!getWeatherHistory((HistoryPoint*)history, 30, outDays, statusMsg, station)) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Err: %s", statusMsg.c_str());
+    lv_label_set_text(t4_title_label, buf);
+    return;
+  }
+
+  if (outDays <= 0) {
+    lv_label_set_text(t4_title_label, "No history data");
+    return;
+  }
+
+  // Update chart range
+  float globalMin = 999999;
+  float globalMax = -999999;
+  for (int i=0;i<outDays;i++) {
+    if (history[i].valid) {
+      if (!isnan(history[i].avg)) {
+        if (history[i].avg < globalMin) globalMin = history[i].avg;
+        if (history[i].avg > globalMax) globalMax = history[i].avg;
+      }
+    }
+  }
+  if (globalMin < 999999 && globalMax > -999999) {
+    float range = globalMax - globalMin;
+    int yMin = (int)(globalMin - range * 0.1);
+    int yMax = (int)(globalMax + range * 0.1);
+    lv_chart_set_range(t4_chart, LV_CHART_AXIS_PRIMARY_Y, yMin, yMax);
+  }
+
+  // Update chart points
+  lv_chart_set_point_count(t4_chart, 0);
+  lv_chart_set_point_count(t4_chart, outDays);
+  lv_chart_set_all_value(t4_chart, t4_series, LV_CHART_POINT_NONE);
+
+  for (int i=0;i<outDays;i++) {
+    int val = LV_CHART_POINT_NONE;
+    if (history[i].valid && !isnan(history[i].avg)) val = (int)history[i].avg;
+    lv_chart_set_next_value(t4_chart, t4_series, val);
+    // Update date labels (show MM-DD)
+    if (t4_date_labels[i]) {
+      if (history[i].valid && history[i].date.length() >= 10) {
+        String d = history[i].date.substring(5); // MM-DD
+        lv_label_set_text(t4_date_labels[i], d.c_str());
+      } else {
+        lv_label_set_text(t4_date_labels[i], "");
+      }
+    }
+  }
+
+  lv_chart_refresh(t4_chart);
+  lv_label_set_text(t4_title_label, "History (daily avg °C)");
 }
