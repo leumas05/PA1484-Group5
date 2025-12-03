@@ -15,6 +15,7 @@ struct DailyForecast {
   float maxHumidity;  // Maximum relative humidity in %
   float minPressure;  // Minimum air pressure in hPa
   float maxPressure;  // Maximum air pressure in hPa
+  int symbolCode;     // Weather symbol code (representative for the day)
   bool valid;         // Whether this forecast entry is valid
 };
 

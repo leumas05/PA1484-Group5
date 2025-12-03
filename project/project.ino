@@ -12,6 +12,8 @@
 #include "weather_forecast_api.h"
 #include "weather_history_api.h"
 #include "wifi_manager.h"
+//#include "sun_symbol.c"
+//LV_IMG_DECLARE(sun_symbol);
 
 
 // PlatformIO automatically compile weather_forecast.cpp
@@ -45,6 +47,7 @@ static lv_chart_series_t* t3_series_min;
 static lv_chart_series_t* t3_series_max;
 static lv_obj_t* t3_title_label;
 static lv_obj_t* t3_date_labels[7];  // X-axis date labels
+static lv_obj_t* t3_symbol_labels[7];  // Symbol code labels
 // Tile #4 globals (history)
 static lv_obj_t* t4_chart;
 static lv_chart_series_t* t4_series;
@@ -179,11 +182,19 @@ static void forecast_timer_cb(lv_timer_t* timer)
       lv_chart_set_range(t3_chart, LV_CHART_AXIS_PRIMARY_Y, yMin, yMax);
     }
     
-    // Second pass: update chart with forecast data
+    // Get chart dimensions for positioning symbol labels
+    int chart_x = lv_obj_get_x(t3_chart);
+    int chart_y = lv_obj_get_y(t3_chart);
+    int chart_width = lv_obj_get_width(t3_chart);
+    int chart_height = lv_obj_get_height(t3_chart);
+    int label_spacing = chart_width / 7;
+    
+    // Second pass: update chart with forecast data and position symbol labels
     for (int i = 0; i < 7; i++) {
       if (forecast[i].valid) {
         int minVal = LV_CHART_POINT_NONE;
         int maxVal = LV_CHART_POINT_NONE;
+        float dataValue = 0;
         
         switch(t2_selected_index) {
           case 0: // Temperature - use average for cleaner single line
@@ -191,36 +202,60 @@ static void forecast_timer_cb(lv_timer_t* timer)
               float avgTemp = (forecast[i].minTemp + forecast[i].maxTemp) / 2.0;
               minVal = (int)avgTemp;
               maxVal = (int)avgTemp;
+              dataValue = avgTemp;
             }
             break;
           case 1: // Wind Speed
             if (!isnan(forecast[i].minWind)) {
               minVal = (int)forecast[i].minWind;
               maxVal = (int)forecast[i].maxWind;
+              dataValue = (forecast[i].minWind + forecast[i].maxWind) / 2.0;
             }
             break;
           case 2: // Rain
             if (!isnan(forecast[i].totalRain)) {
               minVal = (int)forecast[i].totalRain;
               maxVal = (int)forecast[i].totalRain;
+              dataValue = forecast[i].totalRain;
             }
             break;
           case 3: // Humidity
             if (!isnan(forecast[i].minHumidity)) {
               minVal = (int)forecast[i].minHumidity;
               maxVal = (int)forecast[i].maxHumidity;
+              dataValue = (forecast[i].minHumidity + forecast[i].maxHumidity) / 2.0;
             }
             break;
           case 4: // Pressure
             if (!isnan(forecast[i].minPressure)) {
               minVal = (int)forecast[i].minPressure;
               maxVal = (int)forecast[i].maxPressure;
+              dataValue = (forecast[i].minPressure + forecast[i].maxPressure) / 2.0;
             }
             break;
         }
         
         lv_chart_set_next_value(t3_chart, t3_series_min, minVal);
         lv_chart_set_next_value(t3_chart, t3_series_max, maxVal);
+        
+        // Position symbol label dynamically based on data value
+        if (t3_symbol_labels[i] && forecast[i].symbolCode >= 0 && globalMin < 999999 && globalMax > -999999) {
+          // Calculate Y position based on data value relative to chart range
+          float range = globalMax - globalMin;
+          float yMin = globalMin - range * 0.1;
+          float yMax = globalMax + range * 0.1;
+          float normalizedValue = (dataValue - yMin) / (yMax - yMin);
+          
+          // Chart Y increases downward, so we need to invert
+          int symbol_y = chart_y + chart_height - (int)(normalizedValue * chart_height) + 15;
+          int symbol_x = chart_x + (i * label_spacing) + (label_spacing / 2) - 8;
+          
+          lv_obj_set_pos(t3_symbol_labels[i], symbol_x, symbol_y);
+          
+          char symbolStr[8];
+          snprintf(symbolStr, sizeof(symbolStr), "%d", forecast[i].symbolCode);
+          lv_label_set_text(t3_symbol_labels[i], symbolStr);
+        }
       }
     }
     
@@ -232,6 +267,14 @@ static void forecast_timer_cb(lv_timer_t* timer)
           lv_label_set_text(t3_date_labels[i], date.c_str());
         } else {
           lv_label_set_text(t3_date_labels[i], "");
+        }
+      }
+      
+      // Symbol labels are now positioned dynamically in the loop above
+      // Just clear any invalid ones here
+      if (t3_symbol_labels[i]) {
+        if (!forecast[i].valid || forecast[i].symbolCode < 0) {
+          lv_label_set_text(t3_symbol_labels[i], "");
         }
       }
     }
@@ -401,10 +444,17 @@ static void create_ui()
     int chart_bottom_y = (lv_disp_get_ver_res(NULL) / 2) + (lv_disp_get_ver_res(NULL) - 100) / 2;
     
     for (int i = 0; i < 7; i++) {
+      int x_pos = 30 + (i * label_spacing) + (label_spacing / 2);
+      
+      // Create symbol code labels above the date labels (below the chart)
+      t3_symbol_labels[i] = lv_label_create(t3);
+      lv_label_set_text(t3_symbol_labels[i], "");
+      lv_obj_set_style_text_font(t3_symbol_labels[i], &lv_font_montserrat_12, 0);
+      lv_obj_set_pos(t3_symbol_labels[i], x_pos - 8, chart_bottom_y - 18);
+      
       t3_date_labels[i] = lv_label_create(t3);
       lv_label_set_text(t3_date_labels[i], "--");
       lv_obj_set_style_text_font(t3_date_labels[i], &lv_font_montserrat_12, 0);
-      int x_pos = 30 + (i * label_spacing) + (label_spacing / 2);
       lv_obj_set_pos(t3_date_labels[i], x_pos - 15, chart_bottom_y + 5);
     }
     
