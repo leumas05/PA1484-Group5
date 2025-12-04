@@ -31,7 +31,6 @@ static lv_obj_t* t2_dropdown; //
 static lv_obj_t* t2_param_label; //
 static uint16_t t2_selected_index = 0; //
 static lv_obj_t* t2_dropdown_cities; //
-static lv_obj_t* t2_city_label; //
 static uint16_t t2_selected_city_index = 0; //
 // City coordinates (lat, lon)
 static float city_coordinates[][2] = {
@@ -61,6 +60,41 @@ static int t4_window_start = 0;  // Starting index of 7-day window (0-23)
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
+
+static const char* get_symbol_description(int code)
+{
+  switch (code) {
+    case 0: return "no data";
+    case 1: return "clear sky";
+    case 2: return "nearly clear";
+    case 3: return "var cloud";
+    case 4: return "half clear";
+    case 5: return "cloudy";
+    case 6: return "overcast";
+    case 7: return "fog";
+    case 8: return "light rain sh";
+    case 9: return "mod rain sh";
+    case 10: return "heavy rain sh";
+    case 11: return "thunderstorm";
+    case 12: return "light sleet sh";
+    case 13: return "mod sleet sh";
+    case 14: return "heavy sleet sh";
+    case 15: return "light snow sh";
+    case 16: return "mod snow sh";
+    case 17: return "heavy snow sh";
+    case 18: return "light rain";
+    case 19: return "mod rain";
+    case 20: return "heavy rain";
+    case 21: return "thunder";
+    case 22: return "light sleet";
+    case 23: return "mod sleet";
+    case 24: return "heavy sleet";
+    case 25: return "light snow";
+    case 26: return "mod snow";
+    case 27: return "heavy snow";
+    default: return "unknown";
+  }
+}
 
 // Timer callback: update WiFi status indicator on tile #1 every second
 static void wifi_indicator_timer_cb(lv_timer_t* timer)
@@ -274,9 +308,8 @@ static void forecast_timer_cb(lv_timer_t* timer)
           int date_y = lv_obj_get_y(t3_date_labels[i]);
           lv_obj_set_pos(t3_symbol_labels[i], x_center - 8, date_y - 40);
           
-          char symbolStr[8];
-          snprintf(symbolStr, sizeof(symbolStr), "%d", forecast[i].symbolCode);
-          lv_label_set_text(t3_symbol_labels[i], symbolStr);
+          const char* meaning = get_symbol_description(forecast[i].symbolCode);
+          lv_label_set_text(t3_symbol_labels[i], meaning);
         } else {
           lv_label_set_text(t3_symbol_labels[i], "");
         }
@@ -371,17 +404,10 @@ static void create_ui()
     lv_obj_set_width(t2_dropdown_cities, 200);
     lv_obj_align(t2_dropdown_cities, LV_ALIGN_TOP_LEFT, 0, 20);
 
-    t2_city_label = lv_label_create(t2);
-    lv_label_set_text(t2_city_label, "Select city...");
-    lv_obj_set_style_text_font(t2_city_label, &lv_font_montserrat_20, 0);
-    lv_obj_align_to(t2_city_label, t2_dropdown_cities, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
-
     lv_obj_add_event_cb(t2_dropdown_cities, [](lv_event_t* e){
       lv_obj_t* dd = lv_event_get_target(e);
       t2_selected_city_index = lv_dropdown_get_selected(dd);
       // Direct call to update immediately
-      extern void update_t2_city_display();
-      update_t2_city_display();
       extern void update_t2_param_display();
       update_t2_param_display();  // Also update the parameter display for the new city
       // Also fetch an updated forecast for the newly selected city (if WiFi is ready)
@@ -409,7 +435,6 @@ static void create_ui()
 
         // Update displays
         update_t2_param_display();
-        update_t2_city_display();
         // Refresh forecast and history after reset
         forecast_timer_cb(NULL);
         extern void history_timer_cb(lv_timer_t* t);
@@ -685,39 +710,6 @@ void update_t2_param_display()
     }
   }
   lv_label_set_text(t2_param_label, buf);
-}
-
-void update_t2_city_display()
-{
-  if (!t2_city_label) return;
-
-  if (WiFi.status() != WL_CONNECTED) {
-    lv_label_set_text(t2_city_label, "");
-    return;
-  }
-
-  String err;
-  char buf[128];
-  int new_station = -1;
-  const char* cityName = "Unknown";
-
-  switch (t2_selected_city_index) {
-    case 0: cityName = "Karlskrona"; break;
-    case 1: cityName = "Stockholm"; break;
-    case 2: cityName = "Gothenburg"; break;
-    case 3: cityName = "Kiruna"; break;
-    case 4: cityName = "Malmo"; break;
-  }
-
-  new_station = change_station_nr(cityName);
-
-  /*if (new_station > 0) {
-    snprintf(buf, sizeof(buf), "City: %s (Station %d)", cityName, new_station);
-  } else {
-    snprintf(buf, sizeof(buf), "City: %s", cityName);
-  }*/
-
-  lv_label_set_text(t2_city_label, buf);
 }
 
 // Timer callback: update weather history on tile #4
