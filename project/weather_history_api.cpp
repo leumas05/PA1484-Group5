@@ -3,6 +3,14 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <time.h>
+#include <string.h>
+
+namespace {
+  static const int HISTORY_BUFFER = 192;  // Enough for ~5 months of daily records
+  static char dateList[HISTORY_BUFFER][11];  // YYYY-MM-DD + null
+  static float sumBuf[HISTORY_BUFFER];
+  static uint16_t cntBuf[HISTORY_BUFFER];
+}
 
 bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String &statusMsg, int station_nr, int parameter_id) {
   // Initialize
@@ -47,10 +55,12 @@ bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String
     return false;
   }
 
-  // Collect ALL dates from the JSON (up to 64 to handle full latest-months period safely)
-  String dateList[64];
-  float sum[64];
-  int cnt[64];
+  // Collect ALL dates from the JSON using static buffers to reduce stack usage
+  for (int i = 0; i < HISTORY_BUFFER; i++) {
+    dateList[i][0] = '\0';
+    sumBuf[i] = 0.0f;
+    cntBuf[i] = 0;
+  }
   int dateCount = 0;
   int totalDatesFound = 0;  // Track total unique dates found
 
@@ -83,6 +93,8 @@ bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String
 
     if (ds.length() < 10) continue;
     ds = ds.substring(0,10); // YYYY-MM-DD
+    char dsChars[11];
+    ds.toCharArray(dsChars, sizeof(dsChars));
 
     // Value: some APIs return numbers as strings, handle both
     float val = NAN;
@@ -97,38 +109,40 @@ bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String
     // Find index in dateList
     int idx = -1;
     for (int i=0;i<dateCount;i++) {
-      if (dateList[i] == ds) { idx = i; break; }
+      if (strncmp(dateList[i], dsChars, sizeof(dsChars)) == 0) { idx = i; break; }
     }
     if (idx < 0) {
       // New date found
-      if (dateCount >= 64) {
+      if (dateCount >= HISTORY_BUFFER) {
         // Array full - shift all entries left to drop oldest, add newest at end
         totalDatesFound++;
-        for (int i = 0; i < 63; i++) {
-          dateList[i] = dateList[i + 1];
-          sum[i] = sum[i + 1];
-          cnt[i] = cnt[i + 1];
+        for (int i = 0; i < HISTORY_BUFFER - 1; i++) {
+          memcpy(dateList[i], dateList[i + 1], sizeof(dateList[i]));
+          sumBuf[i] = sumBuf[i + 1];
+          cntBuf[i] = cntBuf[i + 1];
         }
-        idx = 63;  // Use last slot for new date
-        dateList[idx] = ds;
-        sum[idx] = 0.0f;
-        cnt[idx] = 0;
+        idx = HISTORY_BUFFER - 1;  // Use last slot for new date
+        memcpy(dateList[idx], dsChars, sizeof(dateList[idx]));
+        dateList[idx][sizeof(dateList[idx]) - 1] = '\0';
+        sumBuf[idx] = 0.0f;
+        cntBuf[idx] = 0;
       } else {
         // Still have space
         idx = dateCount;
-        dateList[idx] = ds;
-        sum[idx] = 0.0f;
-        cnt[idx] = 0;
+        memcpy(dateList[idx], dsChars, sizeof(dateList[idx]));
+        dateList[idx][sizeof(dateList[idx]) - 1] = '\0';
+        sumBuf[idx] = 0.0f;
+        cntBuf[idx] = 0;
         dateCount++;
         totalDatesFound++;
       }
     }
-    sum[idx] += val;
-    cnt[idx]++;
+    sumBuf[idx] += val;
+    cntBuf[idx]++;
   }
 
   // If array never filled, use actual count
-  if (dateCount < 64) {
+  if (dateCount < HISTORY_BUFFER) {
     totalDatesFound = dateCount;
   }
 
@@ -137,9 +151,9 @@ bool getWeatherHistory(HistoryPoint history[], int maxDays, int &outDays, String
   int startIdx = (dateCount > maxDays) ? (dateCount - maxDays) : 0;
   int filled = 0;
   for (int i = startIdx; i < dateCount && filled < maxDays; i++) {
-    if (cnt[i] > 0) {
-      history[filled].date = dateList[i];
-      history[filled].avg = sum[i] / (float)cnt[i];
+    if (cntBuf[i] > 0) {
+      history[filled].date = String(dateList[i]);
+      history[filled].avg = sumBuf[i] / (float)cntBuf[i];
       history[filled].valid = true;
       filled++;
     }

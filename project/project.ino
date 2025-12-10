@@ -54,15 +54,18 @@ static lv_obj_t* t3_title_label;
 static lv_obj_t* t3_date_labels[7];  // X-axis date labels
 static lv_obj_t* t3_symbol_labels[7];  // Symbol code labels
 // Tile #4 globals (history)
+static const int T4_WINDOW_DAYS = 7;            // Visible days per window
+static const int T4_HISTORY_MAX_DAYS = 155;     // Approximately five months of data
 static lv_obj_t* t4_chart;
 static lv_chart_series_t* t4_series;
 static lv_obj_t* t4_title_label;
-static lv_obj_t* t4_date_labels[7];  // X-axis date labels for visible window (7 days)
+static lv_obj_t* t4_date_labels[T4_WINDOW_DAYS];  // X-axis date labels for visible window
 static lv_obj_t* t4_slider;  // Vertical slider to select 7-day window
 static int t4_point_count = 0;
-static HistoryPoint t4_full_history[31];  // Store full month of data
+static HistoryPoint t4_full_history[T4_HISTORY_MAX_DAYS];  // Store up to five months of data
+static HistoryPoint t4_history_buffer[T4_HISTORY_MAX_DAYS];  // Temporary fetch buffer (kept off stack)
 static int t4_full_days = 0;  // Number of valid days in full history
-static int t4_window_start = 0;  // Starting index of 7-day window (0-23)
+static int t4_window_start = 0;  // Starting index of visible window
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
@@ -572,8 +575,9 @@ static void create_ui()
     t4_slider = lv_slider_create(t4);
     lv_obj_set_size(t4_slider, 20, lv_disp_get_ver_res(NULL) - 120);  // Vertical slider
     lv_obj_align(t4_slider, LV_ALIGN_RIGHT_MID, -5, 0);
-    lv_slider_set_range(t4_slider, 0, 23);  // 0-23 allows 7-day window (0-6 to 23-30)
+    lv_slider_set_range(t4_slider, 0, 1);  // Avoid division by zero before data loads
     lv_slider_set_value(t4_slider, 0, LV_ANIM_OFF);
+    lv_obj_add_state(t4_slider, LV_STATE_DISABLED);  // Enable once data arrives
     
     // Slider event callback to update displayed window
     lv_obj_add_event_cb(t4_slider, [](lv_event_t* e){
@@ -587,7 +591,7 @@ static void create_ui()
     lv_obj_set_size(t4_chart, lv_disp_get_hor_res(NULL) - 100, lv_disp_get_ver_res(NULL) - 100);
     lv_obj_align(t4_chart, LV_ALIGN_CENTER, -10, 0);
     lv_chart_set_type(t4_chart, LV_CHART_TYPE_LINE);
-    lv_chart_set_point_count(t4_chart, 7); // Show 7 days
+    lv_chart_set_point_count(t4_chart, T4_WINDOW_DAYS); // Show configured window
     lv_chart_set_div_line_count(t4_chart, 5, 7);
     lv_chart_set_axis_tick(t4_chart, LV_CHART_AXIS_PRIMARY_Y, 5, 3, 6, 1, true, 50);
 
@@ -596,9 +600,9 @@ static void create_ui()
 
     // Create X-axis date labels below the chart (7 visible days)
     int chart_width = lv_disp_get_hor_res(NULL) - 100;
-    int label_spacing = chart_width / 7;
+    int label_spacing = chart_width / T4_WINDOW_DAYS;
     int chart_bottom_y = (lv_disp_get_ver_res(NULL) / 2) + (lv_disp_get_ver_res(NULL) - 100) / 2;
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < T4_WINDOW_DAYS; i++) {
       t4_date_labels[i] = lv_label_create(t4);
       lv_label_set_text(t4_date_labels[i], "--");
       lv_obj_set_style_text_font(t4_date_labels[i], &lv_font_montserrat_12, 0);
@@ -609,7 +613,7 @@ static void create_ui()
     // Initialize full history storage
     t4_full_days = 0;
     t4_window_start = 0;
-    for (int i=0; i<31; i++) {
+    for (int i=0; i<T4_HISTORY_MAX_DAYS; i++) {
       t4_full_history[i].date = "";
       t4_full_history[i].avg = NAN;
       t4_full_history[i].valid = false;
@@ -794,14 +798,14 @@ void update_t4_display_window()
   t4_window_start = lv_slider_get_value(t4_slider);
   
   // Ensure we don't go beyond available data
-  if (t4_window_start + 7 > t4_full_days) {
-    t4_window_start = (t4_full_days > 7) ? (t4_full_days - 7) : 0;
+  if (t4_window_start + T4_WINDOW_DAYS > t4_full_days) {
+    t4_window_start = (t4_full_days > T4_WINDOW_DAYS) ? (t4_full_days - T4_WINDOW_DAYS) : 0;
   }
 
   // Calculate range for the visible window
   float windowMin = 999999;
   float windowMax = -999999;
-  for (int i = t4_window_start; i < t4_window_start + 7 && i < t4_full_days; i++) {
+  for (int i = t4_window_start; i < t4_window_start + T4_WINDOW_DAYS && i < t4_full_days; i++) {
     if (t4_full_history[i].valid && !isnan(t4_full_history[i].avg)) {
       if (t4_full_history[i].avg < windowMin) windowMin = t4_full_history[i].avg;
       if (t4_full_history[i].avg > windowMax) windowMax = t4_full_history[i].avg;
@@ -818,7 +822,7 @@ void update_t4_display_window()
   // Update chart with 7-day window
   lv_chart_set_all_value(t4_chart, t4_series, LV_CHART_POINT_NONE);
   
-  for (int i = 0; i < 7; i++) {
+  for (int i = 0; i < T4_WINDOW_DAYS; i++) {
     int dataIdx = t4_window_start + i;
     if (dataIdx < t4_full_days) {
       int val = LV_CHART_POINT_NONE;
@@ -886,13 +890,12 @@ void history_timer_cb(lv_timer_t* timer)
     case 4: parameter_id = 9; break;  // Pressure
   }
 
-  // Fetch history (daily averages) for up to 30 days
-  HistoryPoint history[31];
-  for (int i=0;i<31;i++) { history[i].date=""; history[i].avg = NAN; history[i].valid=false; }
+  // Fetch history (daily averages) for up to 5 months
+  for (int i=0;i<T4_HISTORY_MAX_DAYS;i++) { t4_history_buffer[i].date=""; t4_history_buffer[i].avg = NAN; t4_history_buffer[i].valid=false; }
   int outDays = 0;
   String statusMsg;
 
-  if (!getWeatherHistory((HistoryPoint*)history, 30, outDays, statusMsg, station, parameter_id)) {
+  if (!getWeatherHistory(t4_history_buffer, T4_HISTORY_MAX_DAYS, outDays, statusMsg, station, parameter_id)) {
     char buf[64];
     snprintf(buf, sizeof(buf), "Err: %s", statusMsg.c_str());
     lv_label_set_text(t4_title_label, buf);
@@ -906,14 +909,22 @@ void history_timer_cb(lv_timer_t* timer)
 
   // Store full history data in REVERSE order (most recent first)
   t4_full_days = outDays;
-  for (int i = 0; i < outDays && i < 31; i++) {
-    t4_full_history[i] = history[outDays - 1 - i];  // Reverse order
+  for (int i = 0; i < outDays && i < T4_HISTORY_MAX_DAYS; i++) {
+    t4_full_history[i] = t4_history_buffer[outDays - 1 - i];  // Reverse order
   }
 
   // Reset window to start (most recent data)
   t4_window_start = 0;
   if (t4_slider) {
+    int maxStart = (t4_full_days > T4_WINDOW_DAYS) ? (t4_full_days - T4_WINDOW_DAYS) : 0;
+    int sliderMax = (maxStart > 0) ? maxStart : 1;
+    lv_slider_set_range(t4_slider, 0, sliderMax);
     lv_slider_set_value(t4_slider, 0, LV_ANIM_OFF);
+    if (maxStart > 0) {
+      lv_obj_clear_state(t4_slider, LV_STATE_DISABLED);
+    } else {
+      lv_obj_add_state(t4_slider, LV_STATE_DISABLED);
+    }
   }
 
   // Update the display with the initial 7-day window
