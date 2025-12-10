@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <TFT_eSPI.h>
 #include <time.h>
+#include <Preferences.h>
 #include <LilyGo_AMOLED.h>
 #include <LV_Helper.h>
 #include <lvgl.h>
@@ -32,6 +33,11 @@ static lv_obj_t* t2_param_label; //
 static uint16_t t2_selected_index = 0; //
 static lv_obj_t* t2_dropdown_cities; //
 static uint16_t t2_selected_city_index = 0; //
+static Preferences preferences;  // NVS storage for saved selections
+static uint8_t saved_param_index = 0;
+static uint8_t saved_city_index = 0;
+static bool has_saved_selection = false;
+static bool prefs_ready = false;
 // City coordinates (lat, lon)
 static float city_coordinates[][2] = {
   {56.16, 15.59},  // Karlskrona
@@ -60,6 +66,50 @@ static int t4_window_start = 0;  // Starting index of 7-day window (0-23)
 static unsigned long boot_start_ms = 0;
 static bool boot_switched = false;
 static float lastTemperature = NAN;
+
+static uint16_t clamp_param_index(uint16_t index)
+{
+  if (index > 4) return 4;
+  return index;
+}
+
+static uint16_t clamp_city_index(uint16_t index)
+{
+  if (index > 4) return 4;
+  return index;
+}
+
+static void load_saved_selection()
+{
+  if (!prefs_ready) {
+    t2_selected_index = 0;
+    t2_selected_city_index = 0;
+    has_saved_selection = false;
+    return;
+  }
+
+  saved_param_index = clamp_param_index(preferences.getUChar("param", 0));
+  saved_city_index = clamp_city_index(preferences.getUChar("city", 0));
+  has_saved_selection = preferences.isKey("param") && preferences.isKey("city");
+
+  if (has_saved_selection) {
+    t2_selected_index = saved_param_index;
+    t2_selected_city_index = saved_city_index;
+  } else {
+    t2_selected_index = 0;
+    t2_selected_city_index = 0;
+  }
+}
+
+static void save_current_selection()
+{
+  if (!prefs_ready) return;
+  saved_param_index = clamp_param_index(t2_selected_index);
+  saved_city_index = clamp_city_index(t2_selected_city_index);
+  preferences.putUChar("param", saved_param_index);
+  preferences.putUChar("city", saved_city_index);
+  has_saved_selection = true;
+}
 
 static const char* get_symbol_description(int code)
 {
@@ -345,7 +395,7 @@ static void create_ui()
     // Boot tile (shows first for a short time)
   {
     t_boot_label = lv_label_create(t_boot);
-    lv_label_set_text(t_boot_label, "Grupp 5 v.0.3");
+    lv_label_set_text(t_boot_label, "Group 5 v.3.0");
     lv_obj_set_style_text_font(t_boot_label, &lv_font_montserrat_28, 0);
     lv_obj_center(t_boot_label);
   }
@@ -375,7 +425,7 @@ static void create_ui()
     t2_dropdown = lv_dropdown_create(t2);
     const char* dd_opts = "Temperature\nWind\nRain\nHumidity\nPressure";
     lv_dropdown_set_options_static(t2_dropdown, dd_opts);
-    lv_dropdown_set_selected(t2_dropdown, 0);  // Default to Temperature
+    lv_dropdown_set_selected(t2_dropdown, clamp_param_index(t2_selected_index));
     lv_obj_set_width(t2_dropdown, 200);
     lv_obj_align(t2_dropdown, LV_ALIGN_TOP_MID, 0, 20);
     // Label that shows the chosen parameter's current value
@@ -400,7 +450,7 @@ static void create_ui()
     t2_dropdown_cities = lv_dropdown_create(t2);
     const char* dd_opts_city = "Karlskrona\nStockholm\nGothenburg\nKiruna\nMalmo";
     lv_dropdown_set_options_static(t2_dropdown_cities, dd_opts_city);
-    lv_dropdown_set_selected(t2_dropdown_cities, 0);  // Default to Karlskrona
+    lv_dropdown_set_selected(t2_dropdown_cities, clamp_city_index(t2_selected_city_index));  // Default to Karlskrona
     lv_obj_set_width(t2_dropdown_cities, 200);
     lv_obj_align(t2_dropdown_cities, LV_ALIGN_TOP_LEFT, 0, 20);
 
@@ -417,31 +467,43 @@ static void create_ui()
       history_timer_cb(NULL);
     }, LV_EVENT_VALUE_CHANGED, NULL);
 
-    // Reset button: restores default parameter and city selection (INTE TESTAD ÄN)
-    {
-      lv_obj_t* reset_btn = lv_btn_create(t2);
-      lv_obj_set_size(reset_btn, 120, 40);
-      lv_obj_align(reset_btn, LV_ALIGN_TOP_RIGHT, -10, 18);
-      lv_obj_t* lbl = lv_label_create(reset_btn);
-      lv_label_set_text(lbl, "Reset");
-      lv_obj_center(lbl);
-      lv_obj_add_event_cb(reset_btn, [](lv_event_t* e){
-        LV_UNUSED(e);
-        // Reset dropdown selections to defaults
-        if (t2_dropdown) lv_dropdown_set_selected(t2_dropdown, 0);
-        t2_selected_index = 0;
-        if (t2_dropdown_cities) lv_dropdown_set_selected(t2_dropdown_cities, 0);
-        t2_selected_city_index = 0;
+    // Reset button: restores saved parameter and city selection
+    lv_obj_t* reset_btn = lv_btn_create(t2);
+    lv_obj_set_size(reset_btn, 120, 40);
+    lv_obj_align(reset_btn, LV_ALIGN_TOP_RIGHT, -10, 18);
+    lv_obj_t* reset_lbl = lv_label_create(reset_btn);
+    lv_label_set_text(reset_lbl, "Reset");
+    lv_obj_center(reset_lbl);
+    lv_obj_add_event_cb(reset_btn, [](lv_event_t* e){
+      LV_UNUSED(e);
+      uint16_t target_param = has_saved_selection ? saved_param_index : 0;
+      uint16_t target_city = has_saved_selection ? saved_city_index : 0;
+      target_param = clamp_param_index(target_param);
+      target_city = clamp_city_index(target_city);
 
-        // Update displays
-        update_t2_param_display();
-        // Refresh forecast and history after reset
-        forecast_timer_cb(NULL);
-        extern void history_timer_cb(lv_timer_t* t);
-        history_timer_cb(NULL);
-        
-      }, LV_EVENT_CLICKED, NULL);
-    }
+      t2_selected_index = target_param;
+      t2_selected_city_index = target_city;
+
+      if (t2_dropdown) lv_dropdown_set_selected(t2_dropdown, target_param);
+      if (t2_dropdown_cities) lv_dropdown_set_selected(t2_dropdown_cities, target_city);
+
+      update_t2_param_display();
+      forecast_timer_cb(NULL);
+      extern void history_timer_cb(lv_timer_t* t);
+      history_timer_cb(NULL);
+    }, LV_EVENT_CLICKED, NULL);
+
+    // Save button: stores current selections for future resets/boots
+    lv_obj_t* save_btn = lv_btn_create(t2);
+    lv_obj_set_size(save_btn, 120, 40);
+    lv_obj_align_to(save_btn, reset_btn, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
+    lv_obj_t* save_lbl = lv_label_create(save_btn);
+    lv_label_set_text(save_lbl, "Save");
+    lv_obj_center(save_lbl);
+    lv_obj_add_event_cb(save_btn, [](lv_event_t* e){
+      LV_UNUSED(e);
+      save_current_selection();
+    }, LV_EVENT_CLICKED, NULL);
   }
 
   // Tile #3 - 7-Day Weather Forecast Graph
@@ -608,6 +670,16 @@ void setup()
     Serial.println("Failed to initialize display (amoled.begin()).");
   } else {
     Serial.println("Display initialized.");
+  }
+
+  prefs_ready = preferences.begin("weapp", false);
+  if (!prefs_ready) {
+    Serial.println("Failed to initialize preferences storage.");
+    t2_selected_index = 0;
+    t2_selected_city_index = 0;
+    has_saved_selection = false;
+  } else {
+    load_saved_selection();
   }
 
   // Start LVGL helper and create UI
