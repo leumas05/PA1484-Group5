@@ -13,9 +13,13 @@
 #include "weather_forecast_api.h"
 #include "weather_history_api.h"
 #include "wifi_manager.h"
-//#include "sun_symbol.c"
-//LV_IMG_DECLARE(sun_symbol);
-
+LV_IMG_DECLARE(clear_day_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48);
+LV_IMG_DECLARE(cloud_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48);
+LV_IMG_DECLARE(foggy_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48);
+LV_IMG_DECLARE(question_mark_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48);
+LV_IMG_DECLARE(rainy_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48);
+LV_IMG_DECLARE(snowing_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48);
+LV_IMG_DECLARE(thunderstorm_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48);
 
 // PlatformIO automatically compile weather_forecast.cpp
 LilyGo_Class amoled;
@@ -53,6 +57,7 @@ static lv_chart_series_t* t3_series_max;
 static lv_obj_t* t3_title_label;
 static lv_obj_t* t3_date_labels[7];  // X-axis date labels
 static lv_obj_t* t3_symbol_labels[7];  // Symbol code labels
+static lv_obj_t* t3_symbol_images[7];  // Symbol icons for select codes
 // Tile #4 globals (history)
 static const int T4_WINDOW_DAYS = 7;            // Visible days per window
 static const int T4_HISTORY_MAX_DAYS = 155;     // Approximately five months of data
@@ -118,35 +123,96 @@ static const char* get_symbol_description(int code)
 {
   switch (code) {
     case 0: return "no data";
-    case 1: return "clear sky";
-    case 2: return "nearly clear";
-    case 3: return "var cloud";
-    case 4: return "half clear";
-    case 5: return "cloudy";
-    case 6: return "overcast";
+    case 1: return "clear sky";  //klar
+    case 2: return "nearly clear";  //klar
+    case 3: return "var cloud"; //klar
+    case 4: return "half clear"; //klar
+    case 5: return "cloudy"; //klar
+    case 6: return "overcast"; //klar
     case 7: return "fog";
-    case 8: return "light rain sh";
-    case 9: return "mod rain sh";
-    case 10: return "heavy rain sh";
+    case 8: return "light rain sh"; //klar
+    case 9: return "mod rain sh"; //klar
+    case 10: return "heavy rain sh"; //klar
     case 11: return "thunderstorm";
-    case 12: return "light sleet sh";
-    case 13: return "mod sleet sh";
-    case 14: return "heavy sleet sh";
-    case 15: return "light snow sh";
-    case 16: return "mod snow sh";
-    case 17: return "heavy snow sh";
-    case 18: return "light rain";
-    case 19: return "mod rain";
-    case 20: return "heavy rain";
+    case 12: return "light sleet sh"; //klar
+    case 13: return "mod sleet sh"; //klar
+    case 14: return "heavy sleet sh"; //klar
+    case 15: return "light snow sh"; //klar
+    case 16: return "mod snow sh"; //klar
+    case 17: return "heavy snow sh"; //klar
+    case 18: return "light rain"; //klar
+    case 19: return "mod rain"; //klar
+    case 20: return "heavy rain"; //klar
     case 21: return "thunder";
-    case 22: return "light sleet";
-    case 23: return "mod sleet";
-    case 24: return "heavy sleet";
-    case 25: return "light snow";
-    case 26: return "mod snow";
-    case 27: return "heavy snow";
+    case 22: return "light sleet"; //klar
+    case 23: return "mod sleet"; //klar
+    case 24: return "heavy sleet"; //klar
+    case 25: return "light snow"; //klar
+    case 26: return "mod snow"; //klar
+    case 27: return "heavy snow"; //klar
     default: return "unknown";
   }
+}
+
+static bool is_sun_symbol(int code)
+{
+  return code >= 1 && code <= 2;
+}
+
+static bool is_cloud_symbol(int code)
+{
+  return code >= 3 && code <= 6;
+}
+
+static bool is_rain_symbol(int code)
+{
+  switch (code) {
+    case 8:
+    case 9:
+    case 10:
+    case 12:
+    case 13:
+    case 14:
+    case 18:
+    case 19:
+    case 20:
+    case 22:
+    case 23:
+    case 24:
+      return true;
+    default:
+      return false;
+  }
+}
+
+static bool is_snow_symbol(int code)
+{
+  switch (code) {
+    case 15:
+    case 16:
+    case 17:
+    case 25:
+    case 26:
+    case 27:
+      return true;
+    default:
+      return false;
+  }
+}
+
+static bool is_thunder_symbol(int code)
+{
+  return code == 11 || code == 21;
+}
+
+static bool is_fog_symbol(int code)
+{
+  return code == 7;
+}
+
+static bool is_question_symbol(int code)
+{
+  return code == 0;
 }
 
 // Timer callback: update WiFi status indicator on tile #1 every second
@@ -185,19 +251,11 @@ static void forecast_timer_cb(lv_timer_t* timer)
   // Get coordinates for the currently selected city
   float lat = city_coordinates[t2_selected_city_index][0];
   float lon = city_coordinates[t2_selected_city_index][1];
-  
-    if (getWeatherForecast(forecast, statusMsg, lat, lon, t2_selected_index)) {
-    // Build title based on selected parameter
-    String paramName;
-    String unit;
-    switch(t2_selected_index) {
-      case 0: paramName = "Temperature"; unit = "°C"; break;
-      case 1: paramName = "Wind Speed"; unit = "m/s"; break;
-      case 2: paramName = "Precipitation"; unit = "mm"; break;
-      case 3: paramName = "Humidity"; unit = "%"; break;
-      case 4: paramName = "Pressure"; unit = "hPa"; break;
-      default: paramName = "Weather"; unit = ""; break;
-    }
+
+  const uint8_t forecast_param_index = 0;  // Always fetch temperature for forecast tile
+  if (getWeatherForecast(forecast, statusMsg, lat, lon, forecast_param_index)) {
+    const char* paramName = "Temperature";
+    const char* unit = "°C";
     
     // Get city name based on selected city index
     const char* cityName = "Unknown";
@@ -226,40 +284,8 @@ static void forecast_timer_cb(lv_timer_t* timer)
     
     for (int i = 0; i < 7; i++) {
       if (forecast[i].valid) {
-        float minVal = NAN;
-        float maxVal = NAN;
-        
-        switch(t2_selected_index) {
-          case 0: // Temperature
-            minVal = forecast[i].minTemp;
-            maxVal = forecast[i].maxTemp;
-            break;
-          case 1: // Wind Speed
-            if (!isnan(forecast[i].minWind)) {
-              minVal = forecast[i].minWind;
-              maxVal = forecast[i].maxWind;
-            }
-            break;
-          case 2: // Rain
-            if (!isnan(forecast[i].totalRain)) {
-              minVal = forecast[i].totalRain;
-              maxVal = forecast[i].totalRain;
-            }
-            break;
-          case 3: // Humidity
-            if (!isnan(forecast[i].minHumidity)) {
-              minVal = forecast[i].minHumidity;
-              maxVal = forecast[i].maxHumidity;
-            }
-            break;
-          case 4: // Pressure
-            if (!isnan(forecast[i].minPressure)) {
-              minVal = forecast[i].minPressure;
-              maxVal = forecast[i].maxPressure;
-            }
-            break;
-        }
-        
+        float minVal = forecast[i].minTemp;
+        float maxVal = forecast[i].maxTemp;
         if (!isnan(minVal) && minVal < globalMin) globalMin = minVal;
         if (!isnan(maxVal) && maxVal > globalMax) globalMax = maxVal;
       }
@@ -275,57 +301,18 @@ static void forecast_timer_cb(lv_timer_t* timer)
     
     // Get chart dimensions for positioning symbol labels
     int chart_x = lv_obj_get_x(t3_chart);
-    int chart_y = lv_obj_get_y(t3_chart);
     int chart_width = lv_obj_get_width(t3_chart);
-    int chart_height = lv_obj_get_height(t3_chart);
-    int label_spacing = chart_width / 7;
     
     // Second pass: update chart with forecast data and position symbol labels
     for (int i = 0; i < 7; i++) {
       if (forecast[i].valid) {
         int minVal = LV_CHART_POINT_NONE;
         int maxVal = LV_CHART_POINT_NONE;
-        float dataValue = 0;
-        
-        switch(t2_selected_index) {
-          case 0: // Temperature - use average for cleaner single line
-            {
-              float avgTemp = (forecast[i].minTemp + forecast[i].maxTemp) / 2.0;
-              minVal = (int)avgTemp;
-              maxVal = (int)avgTemp;
-              dataValue = avgTemp;
-            }
-            break;
-          case 1: // Wind Speed
-            if (!isnan(forecast[i].minWind)) {
-              minVal = (int)forecast[i].minWind;
-              maxVal = (int)forecast[i].maxWind;
-              dataValue = (forecast[i].minWind + forecast[i].maxWind) / 2.0;
-            }
-            break;
-          case 2: // Rain
-            if (!isnan(forecast[i].totalRain)) {
-              minVal = (int)forecast[i].totalRain;
-              maxVal = (int)forecast[i].totalRain;
-              dataValue = forecast[i].totalRain;
-            }
-            break;
-          case 3: // Humidity
-            if (!isnan(forecast[i].minHumidity)) {
-              minVal = (int)forecast[i].minHumidity;
-              maxVal = (int)forecast[i].maxHumidity;
-              dataValue = (forecast[i].minHumidity + forecast[i].maxHumidity) / 2.0;
-            }
-            break;
-          case 4: // Pressure
-            if (!isnan(forecast[i].minPressure)) {
-              minVal = (int)forecast[i].minPressure;
-              maxVal = (int)forecast[i].maxPressure;
-              dataValue = (forecast[i].minPressure + forecast[i].maxPressure) / 2.0;
-            }
-            break;
+        if (!isnan(forecast[i].minTemp) && !isnan(forecast[i].maxTemp)) {
+          float avgTemp = (forecast[i].minTemp + forecast[i].maxTemp) / 2.0f;
+          minVal = (int)avgTemp;
+          maxVal = (int)avgTemp;
         }
-        
         lv_chart_set_next_value(t3_chart, t3_series_min, minVal);
         lv_chart_set_next_value(t3_chart, t3_series_max, maxVal);
       }
@@ -355,16 +342,63 @@ static void forecast_timer_cb(lv_timer_t* timer)
       }
       
       // Position symbol codes above the date labels, aligned on X-axis
+      bool has_symbol = forecast[i].valid && forecast[i].symbolCode >= 0;
+      bool show_sun_icon = has_symbol && is_sun_symbol(forecast[i].symbolCode);
+      bool show_cloud_icon = has_symbol && is_cloud_symbol(forecast[i].symbolCode);
+      bool show_fog_icon = has_symbol && is_fog_symbol(forecast[i].symbolCode);
+      bool show_question_icon = has_symbol && is_question_symbol(forecast[i].symbolCode);
+      bool show_rain_icon = has_symbol && is_rain_symbol(forecast[i].symbolCode);
+      bool show_snow_icon = has_symbol && is_snow_symbol(forecast[i].symbolCode);
+      bool show_thunder_icon = has_symbol && is_thunder_symbol(forecast[i].symbolCode);
+      bool show_any_icon = show_thunder_icon || show_rain_icon || show_snow_icon || show_fog_icon || show_cloud_icon || show_sun_icon || show_question_icon;
+      int date_y = t3_date_labels[i] ? lv_obj_get_y(t3_date_labels[i]) : 0;
+
+      if (t3_symbol_images[i]) {
+        if (show_any_icon) {
+          const lv_img_dsc_t* icon_src = NULL;
+          if (show_thunder_icon) {
+            icon_src = &thunderstorm_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48;
+          } else if (show_rain_icon) {
+            icon_src = &rainy_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48;
+          } else if (show_snow_icon) {
+            icon_src = &snowing_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48;
+          } else if (show_fog_icon) {
+            icon_src = &foggy_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48;
+          } else if (show_cloud_icon) {
+            icon_src = &cloud_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48;
+          } else if (show_sun_icon) {
+            icon_src = &clear_day_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48;
+          } else if (show_question_icon) {
+            icon_src = &question_mark_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48;
+          }
+          if (icon_src) {
+            lv_img_set_src(t3_symbol_images[i], icon_src);
+            lv_obj_clear_flag(t3_symbol_images[i], LV_OBJ_FLAG_HIDDEN);
+            lv_coord_t img_w = lv_obj_get_width(t3_symbol_images[i]);
+            lv_coord_t img_h = lv_obj_get_height(t3_symbol_images[i]);
+            if (img_w == 0) img_w = 50;
+            if (img_h == 0) img_h = 50;
+            lv_obj_set_pos(t3_symbol_images[i], x_center - (img_w / 2), date_y - img_h - 10);
+          } else {
+            lv_obj_add_flag(t3_symbol_images[i], LV_OBJ_FLAG_HIDDEN);
+          }
+        } else {
+          lv_obj_add_flag(t3_symbol_images[i], LV_OBJ_FLAG_HIDDEN);
+        }
+      }
+
       if (t3_symbol_labels[i]) {
-        if (forecast[i].valid && forecast[i].symbolCode >= 0) {
-          // Get the date label's Y position and place symbol code above it
-          int date_y = lv_obj_get_y(t3_date_labels[i]);
+        if (show_any_icon) {
+          lv_label_set_text(t3_symbol_labels[i], "");
+          lv_obj_add_flag(t3_symbol_labels[i], LV_OBJ_FLAG_HIDDEN);
+        } else if (has_symbol) {
+          lv_obj_clear_flag(t3_symbol_labels[i], LV_OBJ_FLAG_HIDDEN);
           lv_obj_set_pos(t3_symbol_labels[i], x_center - 8, date_y - 40);
-          
           const char* meaning = get_symbol_description(forecast[i].symbolCode);
           lv_label_set_text(t3_symbol_labels[i], meaning);
         } else {
           lv_label_set_text(t3_symbol_labels[i], "");
+          lv_obj_clear_flag(t3_symbol_labels[i], LV_OBJ_FLAG_HIDDEN);
         }
       }
     }
@@ -443,13 +477,12 @@ static void create_ui()
       // Direct call to update immediately
       extern void update_t2_param_display();
       update_t2_param_display();
-      // Also update the forecast display for the new parameter
-      forecast_timer_cb(NULL);
-      // Also update history display (tile #4) for the new parameter
+      // Parameter changes only affect tile #2 and history
       extern void history_timer_cb(lv_timer_t* t);
       history_timer_cb(NULL);
     }, LV_EVENT_VALUE_CHANGED, NULL);
 
+    // City dropdown controls the displayed location
     t2_dropdown_cities = lv_dropdown_create(t2);
     const char* dd_opts_city = "Karlskrona\nStockholm\nGothenburg\nKiruna\nMalmo";
     lv_dropdown_set_options_static(t2_dropdown_cities, dd_opts_city);
@@ -541,6 +574,12 @@ static void create_ui()
       lv_label_set_text(t3_symbol_labels[i], "");
       lv_obj_set_style_text_font(t3_symbol_labels[i], &lv_font_montserrat_12, 0);
       lv_obj_set_pos(t3_symbol_labels[i], 0, chart_bottom_y - 18);
+
+      t3_symbol_images[i] = lv_img_create(t3);
+      lv_obj_set_style_bg_color(t3_symbol_images[i], lv_color_white(), 0);
+      lv_obj_set_style_bg_opa(t3_symbol_images[i], LV_OPA_COVER, 0);
+      lv_img_set_src(t3_symbol_images[i], &cloud_50dp_E3E3E3_FILL0_wght400_GRAD0_opsz48);
+      lv_obj_add_flag(t3_symbol_images[i], LV_OBJ_FLAG_HIDDEN);
       
       t3_date_labels[i] = lv_label_create(t3);
       lv_label_set_text(t3_date_labels[i], "--");
